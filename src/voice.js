@@ -1,5 +1,6 @@
-// Says multiplication facts out loud using the browser's built-in speech.
-// Hearing the whole fact right after answering is the reinforcement: "7 times 6 is 42".
+// Says facts out loud using the browser's built-in speech.
+// Hearing the whole fact right after answering is the reinforcement: "7 times 6 is 42",
+// "42 divided by 7 is 6".
 //
 // The voices come from the computer and the browser, and they vary a lot in quality.
 // This module ranks them, starts with the best one, and lets the player pick another.
@@ -8,14 +9,15 @@ export const VOICE_MODES = ['en', 'no', 'off'];
 export const VOICE_LABELS = { en: 'English', no: 'Norsk', off: 'Off' };
 
 const PHRASES = {
-  en: (a, b, product) => `${a} times ${b} is ${product}`,
-  no: (a, b, product) => `${a} ganger ${b} er ${product}`,
+  en: { '×': (a, b, result) => `${a} times ${b} is ${result}`, '÷': (a, b, result) => `${a} divided by ${b} is ${result}` },
+  no: { '×': (a, b, result) => `${a} ganger ${b} er ${result}`, '÷': (a, b, result) => `${a} delt på ${b} er ${result}` },
 };
 const LOCALE = { en: 'en-US', no: 'nb-NO' };
 const PREFIXES = { en: ['en'], no: ['nb', 'no', 'nn'] };
 
-export function phrase(mode, a, b, product) {
-  return PHRASES[mode] ? PHRASES[mode](a, b, product) : '';
+// op: '×' or '÷'. The numbers come in the order they are said.
+export function phrase(mode, op, a, b, result) {
+  return PHRASES[mode] && PHRASES[mode][op] ? PHRASES[mode][op](a, b, result) : '';
 }
 
 // Picks the starting language from the browser's own language.
@@ -100,12 +102,12 @@ export class Voice {
     return 'ok';
   }
 
-  say(a, b, product) {
+  say(op, a, b, result) {
     if (this.mode === 'off' || !this.synth) return;
     // Without a Norwegian voice, Norwegian words would be read with an English accent,
     // so fall back to English entirely.
     const mode = this.status(this.mode) === 'missing' ? 'en' : this.mode;
-    const text = phrase(mode, a, b, product);
+    const text = phrase(mode, op, a, b, result);
     this.lastSpoken = text;
     try {
       const utterance = new SpeechSynthesisUtterance(text);

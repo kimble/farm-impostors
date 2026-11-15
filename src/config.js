@@ -1,4 +1,4 @@
-// Tunable game rules and the shared layout of the farm.
+// Tunable game rules. Where things are in each level is in levels.js.
 
 export const CONFIG = {
   roundsToWin: 20,
@@ -12,14 +12,6 @@ export const CONFIG = {
   herdPacePerWave: 0.15,
   fireCooldown: 0.35,
 };
-
-// Fenced pasture where the herd lives. The gate is a gap in the south fence.
-export const PASTURE = { minX: -24, maxX: 24, minZ: -60, maxZ: -24, gateX: 0, gateWidth: 5 };
-
-// The barn's door faces south (+z), toward the yard.
-export const BARN = { x: -16, z: -6, w: 12, d: 10, h: 5, doorW: 4.4, doorH: 3.6 };
-
-export const SPAWN = { x: -3, z: 18, yaw: 0.4 };
 
 export const WORLD_LIMIT = 95;
 

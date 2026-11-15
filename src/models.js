@@ -341,7 +341,171 @@ function chicken() {
   return { group: g, legs, height: 1.2, width: 0.6, length: 0.95, speed: 1.4, colors: [WHITE, RED] };
 }
 
-const SPECIES = { sheep, cow, pig, chicken };
+// ---------- Forest animals (all face +z) ----------
+
+// The same shape helpers with every size and position multiplied by `k`, for animals
+// drawn larger than life so that they are fair targets.
+function sized(k) {
+  return {
+    B: (rx, ry, rz, m, x = 0, y = 0, z = 0) => ball(rx * k, ry * k, rz * k, m, x * k, y * k, z * k),
+    L: (top, bottom, length, m, x = 0, y = 0, z = 0, segments = 8) =>
+      limb(top * k, bottom * k, length * k, m, x * k, y * k, z * k, segments),
+    C: (radius, height, m, x = 0, y = 0, z = 0) => cone(radius * k, height * k, m, x * k, y * k, z * k),
+  };
+}
+
+function moose() {
+  const g = new THREE.Group();
+  const BROWN = 0x7d5c44;
+  const coat = skin('fur', { repeat: 3, repeatY: 2, color: BROWN, roughness: 0.95, bump: 1.5 });
+  const pale = skin('fur', { repeat: 2, color: 0xa89880, roughness: 0.95, bump: 1.2 });
+  const nose = mat(0x5a4636, { roughness: 0.6 });
+  const antler = mat(0xc8b890, { roughness: 0.6 });
+  const hoof = mat(BLACK, { roughness: 0.5 });
+
+  g.add(ball(0.5, 0.52, 0.95, coat, 0, 1.75, 0));
+  g.add(ball(0.46, 0.52, 0.48, coat, 0, 1.95, 0.55)); // the hump over the shoulders
+  g.add(ball(0.44, 0.45, 0.42, coat, 0, 1.72, -0.62));
+  const neck = ball(0.25, 0.3, 0.52, coat, 0, 2.0, 1.08);
+  neck.rotation.x = -0.3;
+  g.add(neck);
+  const head = ball(0.19, 0.21, 0.42, coat, 0, 2.02, 1.6);
+  head.rotation.x = 0.4;
+  g.add(head);
+  g.add(ball(0.18, 0.19, 0.24, nose, 0, 1.84, 1.9));
+  g.add(ball(0.06, 0.17, 0.07, coat, 0, 1.68, 1.52)); // the bell under the chin
+  g.add(ball(0.06, 0.1, 0.05, coat, 0, 1.8, -1.02));
+  for (const side of [1, -1]) {
+    g.add(ball(0.04, 0.04, 0.03, eyeBlack(), side * 0.17, 2.1, 1.66));
+    const ear = ball(0.07, 0.15, 0.04, coat, side * 0.22, 2.28, 1.36);
+    ear.rotation.z = -side * 0.5;
+    g.add(ear);
+    // Antler: a short beam, a broad palm and a row of tines along its edge.
+    const beam = limb(0.035, 0.045, 0.42, antler, side * 0.34, 2.36, 1.3, 6);
+    beam.rotation.z = -side * 1.1;
+    g.add(beam);
+    const palm = ball(0.34, 0.035, 0.22, antler, side * 0.74, 2.52, 1.26);
+    palm.rotation.z = side * 0.35;
+    g.add(palm);
+    for (const a of [-1.1, -0.4, 0.3, 1.0]) {
+      const tine = cone(0.03, 0.24, antler, side * (0.74 + 0.3 * Math.cos(a)), 2.64 + 0.1 * Math.cos(a), 1.26 + 0.2 * Math.sin(a));
+      tine.rotation.z = -side * 0.5;
+      g.add(tine);
+    }
+  }
+  const legs = [[0.3, 0.62], [-0.3, 0.62], [0.3, -0.62], [-0.3, -0.62]].map(([x, z]) =>
+    legAt(g, x, 1.32, z, [
+      ball(0.14, 0.3, 0.17, coat, 0, -0.1, 0),
+      limb(0.085, 0.06, 1.15, pale, 0, -0.62, 0),
+      limb(0.065, 0.08, 0.13, hoof, 0, -1.25, 0),
+    ]),
+  );
+  // Centre the body over the hit area: the long head would otherwise stick out of it.
+  for (const child of g.children) child.position.z -= 0.4;
+  return { group: g, legs, height: 2.75, width: 1.4, length: 3.3, speed: 0.95, colors: [BROWN, 0xc8b890] };
+}
+
+function fox() {
+  const g = new THREE.Group();
+  const RUST = 0xc8642a;
+  const { B, L, C } = sized(1.3);
+  const coat = skin('fur', { repeat: 2, color: RUST, roughness: 0.9, bump: 1.5 });
+  const white = skin('fur', { repeat: 2, color: 0xf0ece4, roughness: 0.9, bump: 1.5 });
+  const dark = mat(0x1e1a1a, { roughness: 0.8 });
+  const amber = mat(0xd9a030, { roughness: 0.2 });
+
+  g.add(B(0.2, 0.2, 0.46, coat, 0, 0.52, 0));
+  g.add(B(0.17, 0.17, 0.2, white, 0, 0.47, 0.3));
+  const neck = B(0.12, 0.14, 0.2, coat, 0, 0.64, 0.42);
+  neck.rotation.x = -0.5;
+  g.add(neck);
+  g.add(B(0.15, 0.135, 0.17, coat, 0, 0.74, 0.58));
+  g.add(B(0.11, 0.07, 0.11, white, 0, 0.67, 0.63));
+  const snout = C(0.07, 0.24, coat, 0, 0.7, 0.8);
+  snout.rotation.x = Math.PI / 2;
+  g.add(snout);
+  g.add(B(0.028, 0.028, 0.028, dark, 0, 0.7, 0.925));
+  for (const side of [1, -1]) {
+    const ear = C(0.065, 0.17, dark, side * 0.09, 0.9, 0.53);
+    ear.rotation.z = -side * 0.2;
+    g.add(ear);
+    g.add(B(0.022, 0.022, 0.016, amber, side * 0.075, 0.78, 0.7));
+  }
+  const tail = B(0.13, 0.13, 0.3, coat, 0, 0.5, -0.66);
+  tail.rotation.x = 0.25;
+  g.add(tail);
+  g.add(B(0.095, 0.095, 0.14, white, 0, 0.58, -0.93));
+  const legs = [[0.12, 0.3], [-0.12, 0.3], [0.12, -0.3], [-0.12, -0.3]].map(([x, z]) =>
+    legAt(g, x * 1.3, 0.42 * 1.3, z * 1.3, [L(0.05, 0.032, 0.4, dark, 0, -0.2, 0)]),
+  );
+  return { group: g, legs, height: 1.3, width: 0.65, length: 2.6, speed: 1.5, colors: [RUST, 0xf0ece4] };
+}
+
+function hare() {
+  const g = new THREE.Group();
+  const GREY = 0x8a7a66;
+  const k = 1.5;
+  const { B, L } = sized(k);
+  const coat = skin('fur', { repeat: 2, color: GREY, roughness: 0.95, bump: 1.5 });
+  const pale = skin('fur', { repeat: 2, color: 0xd8cfc0, roughness: 0.95, bump: 1.5 });
+  const dark = mat(0x2a2422, { roughness: 0.8 });
+
+  const body = B(0.16, 0.17, 0.25, coat, 0, 0.3, 0);
+  body.rotation.x = -0.25;
+  g.add(body);
+  g.add(B(0.16, 0.17, 0.17, coat, 0, 0.27, -0.14));
+  g.add(B(0.12, 0.13, 0.12, pale, 0, 0.33, 0.17));
+  g.add(B(0.105, 0.11, 0.13, coat, 0, 0.53, 0.23));
+  g.add(B(0.02, 0.016, 0.015, dark, 0, 0.52, 0.36));
+  g.add(B(0.065, 0.065, 0.065, pale, 0, 0.33, -0.31));
+  for (const side of [1, -1]) {
+    const ear = B(0.035, 0.2, 0.055, coat, side * 0.05, 0.8, 0.17);
+    ear.rotation.set(-0.2, 0, -side * 0.12);
+    g.add(ear);
+    g.add(B(0.03, 0.05, 0.045, dark, side * 0.062, 0.975, 0.135));
+    g.add(B(0.02, 0.02, 0.014, eyeBlack(), side * 0.088, 0.56, 0.27));
+  }
+  const front = [0.07, -0.07].map((x) => legAt(g, x * k, 0.22 * k, 0.17 * k, [L(0.028, 0.022, 0.2, coat, 0, -0.11, 0)]));
+  const hind = [0.11, -0.11].map((x) =>
+    legAt(g, x * k, 0.2 * k, -0.12 * k, [B(0.06, 0.1, 0.1, coat, 0, -0.04, 0), B(0.04, 0.03, 0.15, coat, 0, -0.17, 0.08)]),
+  );
+  return { group: g, legs: [...front, ...hind], height: 1.5, width: 0.55, length: 1.15, speed: 1.6, colors: [GREY, 0xd8cfc0] };
+}
+
+function owl() {
+  const g = new THREE.Group();
+  const TAWNY = 0x9a7a55;
+  const k = 1.35;
+  const { B, L, C } = sized(k);
+  const plumage = skin('feathers', { repeat: 2, color: TAWNY, roughness: 0.85, bump: 1.5 });
+  const wing = skin('feathers', { repeat: 2, color: 0x6a5238, roughness: 0.85, bump: 1.5 });
+  const pale = skin('feathers', { repeat: 2, color: 0xe0d2b8, roughness: 0.85, bump: 1.2 });
+  const yellow = mat(0xf2c21e, { roughness: 0.15 });
+  const horn = mat(0x3a3230, { roughness: 0.5 });
+
+  g.add(B(0.2, 0.27, 0.19, plumage, 0, 0.45, 0));
+  g.add(B(0.16, 0.2, 0.12, pale, 0, 0.42, 0.1));
+  g.add(B(0.2, 0.165, 0.18, plumage, 0, 0.8, 0.02));
+  g.add(B(0.11, 0.04, 0.12, wing, 0, 0.2, -0.16));
+  const beak = C(0.03, 0.07, horn, 0, 0.76, 0.2);
+  beak.rotation.x = Math.PI;
+  g.add(beak);
+  for (const side of [1, -1]) {
+    g.add(B(0.09, 0.09, 0.03, pale, side * 0.085, 0.82, 0.165));
+    g.add(B(0.045, 0.045, 0.02, yellow, side * 0.085, 0.82, 0.19));
+    g.add(B(0.022, 0.022, 0.012, eyeBlack(), side * 0.085, 0.82, 0.207));
+    const tuft = C(0.04, 0.12, plumage, side * 0.13, 0.98, 0);
+    tuft.rotation.z = -side * 0.4;
+    g.add(tuft);
+    g.add(B(0.06, 0.24, 0.15, wing, side * 0.21, 0.45, -0.02));
+  }
+  const legs = [0.08, -0.08].map((x) =>
+    legAt(g, x * k, 0.2 * k, 0, [L(0.04, 0.035, 0.16, plumage, 0, -0.08, 0), B(0.055, 0.015, 0.07, yellow, 0, -0.185, 0.03)]),
+  );
+  return { group: g, legs, height: 1.45, width: 0.75, length: 0.7, speed: 0.9, colors: [TAWNY, 0xe0d2b8] };
+}
+
+const SPECIES = { sheep, cow, pig, chicken, moose, fox, hare, owl };
 
 export function buildAnimal(species) {
   return SPECIES[species]();
@@ -478,12 +642,20 @@ export const SIGN_ASPECT = 1.6;
 
 // ---------- Blaster (points along -z) ----------
 
-export function buildBlaster() {
+// One look per blaster: the colour it glows, its trim, and the ink on its screen.
+// `boost` is tuned so that each glows about as strongly as the other.
+export const BLASTERS = {
+  '×': { glow: 0x5ef2ff, boost: 1.25, accent: 0xff7a1a, ink: '#5ef2ff', beam: 0x8ff8ff },
+  '÷': { glow: 0xc77dff, boost: 1.5, accent: 0x2fd6a0, ink: '#dcb0ff', beam: 0xd9a6ff },
+};
+
+export function buildBlaster(op = '×') {
+  const style = BLASTERS[op];
   const body = mat(0x3a4258, { roughness: 0.45, metalness: 0.35 });
   const metal = mat(0x8f9ab2, { roughness: 0.3, metalness: 0.6 });
-  const accent = mat(0xff7a1a, { roughness: 0.4, metalness: 0.3 });
+  const accent = mat(style.accent, { roughness: 0.4, metalness: 0.3 });
   const grip = mat(0x15171d, { roughness: 0.9 });
-  const cyan = glow(0x5ef2ff, 1.25);
+  const lit = glow(style.glow, style.boost);
   const g = new THREE.Group();
   const lengthwise = (mesh) => {
     mesh.rotation.x = Math.PI / 2;
@@ -495,15 +667,15 @@ export function buildBlaster() {
   g.add(rounded(0.145, 0.04, 0.24, accent, 0, -0.06, -0.12, 0.012));
   g.add(lengthwise(limb(0.04, 0.04, 0.36, metal, 0, 0.01, -0.45, 16)));
   for (const z of [-0.36, -0.43, -0.5]) {
-    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.014, 8, 24), cyan);
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.014, 8, 24), lit);
     coil.position.set(0, 0.01, z);
     g.add(coil);
   }
   g.add(lengthwise(limb(0.07, 0.06, 0.07, body, 0, 0.01, -0.63, 16)));
-  g.add(lengthwise(limb(0.035, 0.035, 0.012, cyan, 0, 0.01, -0.667, 16)));
+  g.add(lengthwise(limb(0.035, 0.035, 0.012, lit, 0, 0.01, -0.667, 16)));
   for (const z of [-0.18, -0.08, 0.02]) {
-    g.add(box(0.012, 0.05, 0.06, 0, -0.068, 0.02, z, cyan));
-    g.add(box(0.012, 0.05, 0.06, 0, 0.068, 0.02, z, cyan));
+    g.add(box(0.012, 0.05, 0.06, 0, -0.068, 0.02, z, lit));
+    g.add(box(0.012, 0.05, 0.06, 0, 0.068, 0.02, z, lit));
   }
   const handle = rounded(0.09, 0.22, 0.1, grip, 0, -0.17, 0.1, 0.025);
   handle.rotation.x = 0.3;
@@ -530,14 +702,14 @@ export function buildBlaster() {
     const c = canvas.getContext('2d');
     c.fillStyle = '#06131c';
     c.fillRect(0, 0, 128, 80);
-    c.fillStyle = '#5ef2ff';
+    c.fillStyle = style.ink;
     c.font = 'bold 58px ui-monospace, Menlo, Consolas, monospace';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.fillText(text, 64, 44);
     texture.needsUpdate = true;
   }
-  setScreen('×?');
+  setScreen(`${op}?`);
 
   return { group: g, setScreen };
 }

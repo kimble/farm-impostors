@@ -1,13 +1,11 @@
-// The herd: numbered farm animals wandering around the pasture.
+// The herd: numbered animals wandering around their pasture or clearing.
 // From the outside an impostor is identical to a real animal. Only the game logic
 // in main.js knows which number is the impostor for the current signal.
 
 import * as THREE from 'three';
-import { PASTURE } from './config.js';
 import { buildAnimal, numberTexture, SIGN_ASPECT } from './models.js';
 
 const MARGIN = 2.5;
-const HERD = ['sheep', 'sheep', 'sheep', 'sheep', 'cow', 'cow', 'pig', 'pig', 'chicken', 'chicken'];
 const DROP_HEIGHT = 16;
 const DROP_SECONDS = 1.3;
 
@@ -32,8 +30,12 @@ function shuffle(list, rng) {
 }
 
 export class Herd {
-  constructor(scene, rng = Math.random) {
+  // species: which animal wears each of the ten numbers (in shuffled order).
+  // bounds: the rectangle they stay inside.
+  constructor(scene, { species, bounds, rng = Math.random }) {
     this.scene = scene;
+    this.species = species;
+    this.bounds = bounds;
     this.rng = rng;
     this.animals = [];
     this.hitboxes = [];
@@ -42,14 +44,14 @@ export class Herd {
 
   randomSpot() {
     return {
-      x: PASTURE.minX + MARGIN + this.rng() * (PASTURE.maxX - PASTURE.minX - MARGIN * 2),
-      z: PASTURE.minZ + MARGIN + this.rng() * (PASTURE.maxZ - PASTURE.minZ - MARGIN * 2),
+      x: this.bounds.minX + MARGIN + this.rng() * (this.bounds.maxX - this.bounds.minX - MARGIN * 2),
+      z: this.bounds.minZ + MARGIN + this.rng() * (this.bounds.maxZ - this.bounds.minZ - MARGIN * 2),
     };
   }
 
   // One animal for each number 1-10.
   populate() {
-    const species = shuffle(HERD, this.rng);
+    const species = shuffle(this.species, this.rng);
     species.forEach((kind, i) => this.spawn(i + 1, kind));
   }
 
@@ -128,8 +130,8 @@ export class Herd {
     const dz = p.z - from.z;
     const d = Math.hypot(dx, dz) || 1;
     animal.target = {
-      x: clamp(p.x + (dx / d) * 9, PASTURE.minX + MARGIN, PASTURE.maxX - MARGIN),
-      z: clamp(p.z + (dz / d) * 9, PASTURE.minZ + MARGIN, PASTURE.maxZ - MARGIN),
+      x: clamp(p.x + (dx / d) * 9, this.bounds.minX + MARGIN, this.bounds.maxX - MARGIN),
+      z: clamp(p.z + (dz / d) * 9, this.bounds.minZ + MARGIN, this.bounds.maxZ - MARGIN),
     };
     animal.state = 'flee';
     animal.timer = 1.4;

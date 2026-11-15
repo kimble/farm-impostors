@@ -1,9 +1,12 @@
-// Farm Impostors: wires the world, the herd, the blaster, the hunter drone and the
-// fact trainer together and runs the game loop.
+// Farm Impostors: wires the world, the herd, the blasters, the hunter drone and the
+// fact trainer together and runs the game loop. One level is loaded per page load;
+// moving to another level saves the choice and reloads.
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { FactTrainer } from './facts.js';
+import { FactTrainer, equation, spokenOrder, mistake } from './facts.js';
+import { LEVELS, FIRST_LEVEL, opForRound, chooseLevel } from './levels.js';
+import { BLASTERS } from './models.js';
 import { catchScore, hunterTimeLimit, waveFor, WAVES } from './score.js';
 import { loadProgress, saveProgress, clearProgress, loadSettings, saveSettings } from './storage.js';
 import { buildWorld } from './world.js';
@@ -19,7 +22,14 @@ import { Graphics, QUALITY_LEVELS, QUALITY_LABELS } from './graphics.js';
 
 // `?debug` runs the game without capturing the mouse and exposes `window.__game`,
 // which is how the automated browser check drives it.
-const debug = new URLSearchParams(location.search).has('debug');
+const params = new URLSearchParams(location.search);
+const debug = params.has('debug');
+
+const settings = loadSettings();
+if (settings.best && !settings.bests) settings.bests = { [FIRST_LEVEL]: settings.best }; // older saves
+// The level to play is the one last chosen, if it has been unlocked.
+// `?level=forest` opens a level directly, unlocked or not.
+const level = LEVELS[params.get('level')] || LEVELS[chooseLevel(settings.level, settings.unlocked)];
 
 const HOW_TO =
   'Destroy the animal carrying the missing number before the hunter reaches you. Hit a real animal and the ship fires back.';
@@ -37,19 +47,18 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, 1, 0.1, 600);
 camera.rotation.order = 'YXZ';
 
-const world = buildWorld(scene, renderer);
-const herd = new Herd(scene);
+const world = buildWorld(scene, renderer, level);
+const herd = new Herd(scene, { species: level.herd, bounds: level.roam });
 herd.populate();
 const drone = new Drone(scene);
 const effects = new Effects(scene);
-const player = new Player();
+const player = new Player(level.spawn);
 const blaster = new BlasterView();
 blaster.scene.environment = scene.environment; // the held blaster reflects the same sky
 graphics.setScenes(scene, camera, blaster.scene, blaster.camera);
-let pickup = new BlasterPickup(scene, world.gunSpot);
+let pickup = new BlasterPickup(scene, world.gunSpot, level.pickup);
 const hud = new Hud();
 let trainer = new FactTrainer(loadProgress());
-const settings = loadSettings();
 const voice = new Voice(settings.voice || defaultMode(navigator.language), settings.voiceNames);
 const raycaster = new THREE.Raycaster();
 raycaster.far = 400;
@@ -74,7 +83,11 @@ const game = {
   wave: 1,
   round: null,
   log: [],
-  weapons: 0,
+  blasters: [...level.carried], // the kinds of blaster found so far, e.g. ['×', '÷']
+  active: level.carried.at(-1) || null, // the one in hand
+  roundsStarted: 0,
+  cued: false, // the objective line is asking for the other blaster
+  lastSwitch: 0,
   firstSignal: true,
   slowMotion: 0, // seconds of real time left in slow motion
   sparkClock: 0,
@@ -125,7 +138,7 @@ function cycleVoice() {
   settings.voice = voice.mode;
   saveSettings(settings);
   refreshVoiceChoice();
-  voice.say(7, 6, 42); // a sample, so the choice can be heard straight away
+  voice.say('×', 7, 6, 42); // a sample, so the choice can be heard straight away
 }
 
 function nextVoice() {
@@ -133,7 +146,7 @@ function nextVoice() {
   settings.voiceNames = voice.chosen;
   saveSettings(settings);
   refreshVoiceChoice();
-  voice.say(7, 6, 42);
+  voice.say('×', 7, 6, 42);
 }
 
 // ---------- Graphics setting ----------
@@ -155,7 +168,35 @@ function cycleGraphics() {
 applyGraphics();
 voice.onVoices = refreshVoiceChoice;
 refreshVoiceChoice();
-hud.setBest(settings.best || 0);
+
+// ---------- Levels ----------
+
+function bestHere() {
+  return (settings.bests && settings.bests[level.id]) || 0;
+}
+
+// The levels that can be chosen on the start screen, in order.
+function openLevels() {
+  const unlocked = settings.unlocked || [];
+  return Object.keys(LEVELS).filter((id) => id === FIRST_LEVEL || id === level.id || unlocked.includes(id));
+}
+
+function goToLevel(id) {
+  settings.level = id;
+  saveSettings(settings);
+  const url = new URL(location.href);
+  url.searchParams.delete('level');
+  if (url.href === location.href) location.reload();
+  else location.assign(url);
+}
+
+function nextOpenLevel() {
+  const open = openLevels();
+  goToLevel(open[(open.indexOf(level.id) + 1) % open.length]);
+}
+
+hud.setLevel(level, openLevels().length);
+hud.setBest(bestHere());
 
 // ---------- Rounds ----------
 
@@ -165,7 +206,7 @@ function multiplier() {
 
 function refreshHud() {
   hud.setHearts(game.hearts, CONFIG.maxHearts);
-  if (game.weapons > 0) {
+  if (game.phase === 'hunt' || game.phase === 'ended') {
     hud.setProgress({
       score: game.score,
       multiplier: multiplier(),
@@ -176,7 +217,38 @@ function refreshHud() {
   } else {
     hud.hideProgress();
   }
-  hud.setWeapons(game.weapons, 0);
+  const round = game.round;
+  hud.setWeapons(game.blasters, game.active, round && !round.done ? round.op : null);
+}
+
+// Puts a blaster in the player's hand.
+function holdBlaster(op) {
+  game.active = op;
+  blaster.hold(op);
+  cueBlaster();
+}
+
+// Each signal can only be answered with its own blaster. When the other one is in
+// hand, the objective line says so and the slot for the right one pulses.
+function cueBlaster() {
+  const round = game.round;
+  refreshHud();
+  if (round && !round.done && game.active !== round.op) {
+    hud.setObjective(`This signal needs the ${round.op} blaster. Scroll to switch.`);
+    game.cued = true;
+  } else if (game.cued) {
+    hud.setObjective('');
+    game.cued = false;
+  }
+}
+
+// to: the kind to switch to; left out, it moves on to the next one owned.
+function switchBlaster(to = null) {
+  if (!game.running || game.blasters.length < 2) return;
+  const next = to || game.blasters[(game.blasters.indexOf(game.active) + 1) % game.blasters.length];
+  if (next === game.active || !game.blasters.includes(next)) return;
+  sfx.swap();
+  holdBlaster(next);
 }
 
 function resetRun() {
@@ -187,6 +259,8 @@ function resetRun() {
   game.bestStreak = 0;
   game.wave = 1;
   game.round = null;
+  game.roundsStarted = 0;
+  game.cued = false;
   game.log = [];
   game.timers = [];
   herd.pace = 1;
@@ -200,13 +274,12 @@ function resetRun() {
 function pickUpBlaster() {
   pickup.remove();
   pickup = null;
-  game.weapons = 1;
+  game.blasters.push(level.pickup);
   game.phase = 'hunt';
-  blaster.show();
+  holdBlaster(level.pickup);
   sfx.pickup();
-  hud.toast('Blaster online', 'info', 2.5);
-  hud.setObjective('Scanner warming up. Get to the pasture.');
-  refreshHud();
+  hud.toast(level.text.found, 'info', 2.5);
+  hud.setObjective(level.text.go);
   after(2, () => {
     hud.setObjective(HOW_TO);
     startRound();
@@ -216,23 +289,28 @@ function pickUpBlaster() {
 function startRound() {
   if (game.phase !== 'hunt') return;
   const fact = trainer.next();
-  if (!herd.find(fact.animal)) herd.spawn(fact.animal, 'sheep');
+  const op = opForRound(level, game.roundsStarted);
+  game.roundsStarted += 1;
+  if (!herd.find(fact.animal)) herd.spawn(fact.animal, level.herd[0]);
   const limit = hunterTimeLimit({
     typicalMs: trainer.typicalMs(),
     wave: game.wave,
     first: game.firstSignal,
   });
   game.firstSignal = false;
-  game.round = { ...fact, startedAt: game.time, misses: 0, hinted: false, done: false, limit };
-  hud.setEquation(fact.gun, fact.product);
-  blaster.setScreen(`×${fact.gun}`);
+  game.round = { ...fact, op, startedAt: game.time, misses: 0, hinted: false, done: false, limit };
+  hud.setEquation(op, fact.gun, fact.product);
+  // Only the blaster that fits this signal gets a number.
+  for (const owned of game.blasters) blaster.setScreen(owned, owned === op ? `${op}${fact.gun}` : `${owned}–`);
+  cueBlaster();
   drone.launch(world.ufo.position, limit);
   game.pingClock = 1;
   sfx.launch();
 }
 
 function shoot() {
-  if (!game.running || game.phase !== 'hunt' || game.cooldown > 0) return;
+  if (!game.running || !game.active || game.cooldown > 0) return;
+  if (game.phase !== 'hunt' && game.phase !== 'explore') return;
   game.cooldown = CONFIG.fireCooldown;
   blaster.fire();
   sfx.shoot();
@@ -248,7 +326,7 @@ function shoot() {
   // Start the beam where the held blaster's muzzle is drawn on screen.
   const from = blaster.muzzleOnScreen(new THREE.Vector3()).setZ(0.5).unproject(camera);
   from.sub(camera.position).normalize().multiplyScalar(MUZZLE_DISTANCE).add(camera.position);
-  effects.beam(from, to);
+  effects.beam(from, to, { color: BLASTERS[game.active].beam });
   if (!hit) return;
 
   if (hit.object.userData.drone) {
@@ -262,6 +340,13 @@ function shoot() {
   const round = game.round;
   if (!animal || !round || round.done) {
     effects.burst(to, 0x9ff6ff, 5, 3, 0.3, 0.08);
+    return;
+  }
+  if (game.active !== round.op) {
+    // The wrong blaster does nothing to it, and costs nothing either.
+    effects.burst(to, 0x8a93a8, 6, 3, 0.3, 0.08);
+    sfx.fizzle();
+    hud.toast('Wrong blaster for this signal', 'info', 1.8);
     return;
   }
   if (animal.number === round.animal) destroyImpostor(animal);
@@ -299,8 +384,9 @@ function hitRealAnimal(animal, point) {
   effects.beam(world.ufo.position, eye.clone().setY(eye.y - 0.5), { color: RED, width: 0.35, seconds: 0.3 });
   sfx.wrong();
   sfx.bolt();
-  voice.say(round.gun, animal.number, made);
-  hud.toast(`WRONG TARGET   ${round.gun} × ${animal.number} = ${made}, not ${round.product}`, 'bad', 3.4);
+  // Say and show the true fact that the animal he shot belongs to.
+  voice.say(round.op, ...spokenOrder(round.op, round.gun, animal.number, made));
+  hud.toast(`WRONG TARGET   ${mistake(round.op, round.gun, animal.number, round.product)}`, 'bad', 3.4);
   loseHeart(round);
 }
 
@@ -321,6 +407,7 @@ function destroyImpostor(animal) {
   trainer.record(round.key, { firstTry, ms: elapsed * 1000 });
   saveProgress(trainer.toJSON());
   game.log.push({
+    op: round.op,
     gun: round.gun,
     animal: round.animal,
     product: round.product,
@@ -343,10 +430,10 @@ function destroyImpostor(animal) {
 
   const spot = { x: animal.group.position.x, z: animal.group.position.z };
   const { number, species, height } = animal;
-  const fact = `${round.gun} × ${round.animal} = ${round.product}`;
+  const fact = equation(round.op, round.gun, round.animal, round.product);
 
   // Say and show the whole fact at the moment of success: this is the part that sticks.
-  voice.say(round.gun, round.animal, round.product);
+  voice.say(round.op, ...spokenOrder(round.op, round.gun, round.animal, round.product));
   // The text starts above the alien's head (it stands taller than the animal did).
   const textY = Math.max(height + 0.8, 5.2);
   effects.floatText(new THREE.Vector3(spot.x, textY, spot.z), fact, '#7dff7a', camera.position);
@@ -369,7 +456,8 @@ function destroyImpostor(animal) {
     drone.dismiss();
   }
   hud.setThreat(null);
-  hud.setEquation(round.gun, round.product, round.animal);
+  hud.setEquation(round.op, round.gun, round.product, round.animal);
+  game.cued = false;
   // Only the fact goes in the message; the points appear by the score instead.
   hud.toast(fact, 'good', 2.4);
   hud.scoreGain(points, bonusHeart);
@@ -402,16 +490,21 @@ function summarise(won) {
   const missed = [];
   for (const entry of game.log) {
     if (entry.firstTry) continue;
-    if (!missed.some((m) => m.gun === entry.gun && m.animal === entry.animal)) missed.push(entry);
+    const text = equation(entry.op, entry.gun, entry.animal, entry.product);
+    if (!missed.includes(text)) missed.push(text);
   }
-  const previousBest = settings.best || 0;
+  const previousBest = bestHere();
   const newBest = game.score > previousBest;
-  if (newBest) {
-    settings.best = game.score;
-    saveSettings(settings);
-  }
+  if (newBest) settings.bests = { ...settings.bests, [level.id]: game.score };
+  // Winning a level opens the next one.
+  const opened = won && level.next && !(settings.unlocked || []).includes(level.next);
+  if (opened) settings.unlocked = [...(settings.unlocked || []), level.next];
+  if (newBest || opened) saveSettings(settings);
   return {
     won,
+    wonTitle: level.text.wonTitle,
+    wonText: level.text.won(CONFIG.roundsToWin),
+    nextText: level.next ? level.text.next : null,
     rescued: game.rescued,
     total: CONFIG.roundsToWin,
     rounds: game.log.length,
@@ -435,7 +528,7 @@ function endRun(won) {
     // Ran out of hearts mid-signal: that fact still counts as missed.
     round.done = true;
     trainer.record(round.key, { firstTry: false });
-    game.log.push({ gun: round.gun, animal: round.animal, product: round.product, firstTry: false });
+    game.log.push({ op: round.op, gun: round.gun, animal: round.animal, product: round.product, firstTry: false });
   }
   saveProgress(trainer.toJSON());
   game.phase = 'ended';
@@ -456,7 +549,8 @@ function endRun(won) {
       game.running = false;
       if (document.pointerLockElement) document.exitPointerLock();
       hud.showResults(summarise(won));
-      hud.setBest(settings.best || 0);
+      hud.setBest(bestHere());
+      hud.setLevel(level, openLevels().length);
     },
     won ? 900 : 1300,
   );
@@ -480,8 +574,9 @@ function start() {
   initAudio();
   if (game.phase === 'title') {
     game.phase = 'explore';
+    if (game.active) blaster.hold(game.active); // a blaster carried over from an earlier level
     refreshHud();
-    hud.setObjective('Find a weapon. Something is glowing in the barn.');
+    hud.setObjective(level.text.find);
   }
   captureMouse();
 }
@@ -530,6 +625,8 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (!game.running) return;
+  if (event.code === 'Digit1') switchBlaster('×');
+  if (event.code === 'Digit2') switchBlaster('÷');
   if (event.code === 'Space' || event.code.startsWith('Arrow')) event.preventDefault();
   player.keys.add(event.code);
 });
@@ -537,10 +634,13 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('keyup', (event) => player.keys.delete(event.code));
 window.addEventListener('blur', () => player.keys.clear());
 
-// Scroll wheel cycles through the blasters found so far. With only one, there is
-// nothing to switch to yet.
+// The scroll wheel (or the 1 and 2 keys) switches between the blasters found so far.
+// One turn of the wheel sends a burst of events, so only the first one counts.
 window.addEventListener('wheel', () => {
-  if (game.running && game.weapons > 1) hud.setWeapons(game.weapons, 0);
+  const now = performance.now();
+  if (now - game.lastSwitch < 250) return;
+  game.lastSwitch = now;
+  switchBlaster();
 });
 
 document.getElementById('start-button').addEventListener('click', start);
@@ -549,10 +649,13 @@ document.getElementById('again-button').addEventListener('click', playAgain);
 document.getElementById('voice-button').addEventListener('click', cycleVoice);
 document.getElementById('voice-name-button').addEventListener('click', nextVoice);
 document.getElementById('graphics-button').addEventListener('click', cycleGraphics);
+document.getElementById('level-button').addEventListener('click', nextOpenLevel);
+document.getElementById('next-button').addEventListener('click', () => goToLevel(level.next));
 document.getElementById('reset-button').addEventListener('click', (event) => {
   clearProgress();
   trainer = new FactTrainer(null);
-  settings.best = 0;
+  delete settings.best;
+  settings.bests = {};
   saveSettings(settings);
   hud.setBest(0);
   event.target.textContent = 'Saved progress cleared';
@@ -654,6 +757,9 @@ if (debug) {
     settings,
     graphics,
     camera,
+    level,
+    blaster,
+    switchBlaster,
     get trainer() {
       return trainer;
     },

@@ -2,6 +2,7 @@
   --panel: rgba(10, 16, 32, 0.74);
   --line: rgba(94, 242, 255, 0.55);
   --cyan: #5ef2ff;
+  --violet: #c77dff;
   --good: #7dff7a;
   --bad: #ff6b5e;
   --text: #f2f6ff;
@@ -102,6 +103,15 @@ body {
 
 .equation.solved {
   color: var(--good);
+}
+
+/* Signals for the ÷ blaster are tinted its colour, so the sign is hard to miss. */
+.equation.divide:not(.solved) {
+  color: var(--violet);
+}
+
+.equation.divide:not(.solved) .unknown {
+  background: var(--violet);
 }
 
 @keyframes pulse {
@@ -318,6 +328,22 @@ body {
 .slot.active {
   border-color: var(--cyan);
   box-shadow: 0 0 14px rgba(94, 242, 255, 0.5);
+}
+
+.slot.divide.active {
+  border-color: var(--violet);
+  box-shadow: 0 0 14px rgba(199, 125, 255, 0.55);
+}
+
+/* The blaster the signal needs, while the other one is in hand. */
+.slot.wanted {
+  color: #0a1020;
+  background: var(--cyan);
+  animation: pulse 0.7s ease-in-out infinite;
+}
+
+.slot.divide.wanted {
+  background: var(--violet);
 }
 
 #vignette {

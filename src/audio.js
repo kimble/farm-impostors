@@ -141,6 +141,16 @@ export const sfx = {
   pickup() {
     notes([196, 294, 392, 587, 784], { step: 0.08, dur: 0.22, type: 'sawtooth', vol: 0.09 });
   },
+  // Switching from one blaster to another.
+  swap() {
+    tone({ type: 'square', from: 500, to: 900, dur: 0.06, vol: 0.06 });
+    noise({ dur: 0.05, vol: 0.05, from: 3000, to: 1500 });
+  },
+  // Firing the blaster that cannot answer this signal.
+  fizzle() {
+    tone({ type: 'sawtooth', from: 320, to: 110, dur: 0.22, vol: 0.09 });
+    noise({ dur: 0.18, vol: 0.06, from: 1500, to: 300 });
+  },
   heart() {
     notes([1047, 1568], { step: 0.1, dur: 0.22, type: 'sine', vol: 0.14 });
   },

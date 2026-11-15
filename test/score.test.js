@@ -52,9 +52,11 @@ test('later waves give less time', () => {
 });
 
 test('facts are phrased in the chosen language', () => {
-  assert.equal(phrase('en', 7, 6, 42), '7 times 6 is 42');
-  assert.equal(phrase('no', 7, 6, 42), '7 ganger 6 er 42');
-  assert.equal(phrase('off', 7, 6, 42), '');
+  assert.equal(phrase('en', '×', 7, 6, 42), '7 times 6 is 42');
+  assert.equal(phrase('no', '×', 7, 6, 42), '7 ganger 6 er 42');
+  assert.equal(phrase('en', '÷', 42, 7, 6), '42 divided by 7 is 6');
+  assert.equal(phrase('no', '÷', 42, 7, 6), '42 delt på 7 er 6');
+  assert.equal(phrase('off', '×', 7, 6, 42), '');
 });
 
 test('the starting voice language follows the browser', () => {

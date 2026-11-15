@@ -1,6 +1,6 @@
 // Everything drawn as HTML on top of the 3D view: hearts, scanner, score, messages, menus.
 
-import { MIN_FACTOR, MAX_FACTOR, factKey } from './facts.js';
+import { MIN_FACTOR, MAX_FACTOR, factKey, equationParts } from './facts.js';
 
 const SLOTS = ['×', '÷', '+', '−'];
 
@@ -65,15 +65,13 @@ export class Hud {
     }
   }
 
-  // Shows "7 × ? = 42". Pass `answer` to show the solved fact instead.
-  setEquation(gun, product, answer = null) {
+  // Shows "7 × ? = 42" or "42 ÷ 7 = ?". Pass `answer` to show the solved fact instead.
+  setEquation(op, gun, product, answer = null) {
+    const [before, after] = equationParts(op, gun, product);
     this.scanner.hidden = false;
     this.equation.classList.toggle('solved', answer !== null);
-    this.equation.replaceChildren(
-      `${gun} × `,
-      el('span', 'unknown', answer === null ? '?' : String(answer)),
-      ` = ${product}`,
-    );
+    this.equation.classList.toggle('divide', op === '÷');
+    this.equation.replaceChildren(before, el('span', 'unknown', answer === null ? '?' : String(answer)), after);
   }
 
   hideScanner() {
@@ -133,15 +131,19 @@ export class Hud {
     this.objective.textContent = text;
   }
 
-  // owned: how many blasters have been found. active: index of the one in hand.
-  setWeapons(owned, active) {
+  // owned: the blasters found so far, e.g. ['×', '÷']. active: the one in hand.
+  // wanted: the one the current signal needs, which pulses until it is in hand.
+  setWeapons(owned, active, wanted = null) {
     this.weapons.replaceChildren();
-    SLOTS.forEach((symbol, i) => {
-      const slot = el('div', 'slot', i < owned ? symbol : '?');
-      if (i < owned) slot.classList.add('owned');
-      if (i < owned && i === active) slot.classList.add('active');
+    for (const symbol of SLOTS) {
+      const has = owned.includes(symbol);
+      const slot = el('div', 'slot', has ? symbol : '?');
+      if (has) slot.classList.add('owned');
+      if (has && symbol === '÷') slot.classList.add('divide');
+      if (has && symbol === active) slot.classList.add('active');
+      if (has && symbol === wanted && symbol !== active) slot.classList.add('wanted');
       this.weapons.append(slot);
-    });
+    }
   }
 
   flashDamage() {
@@ -167,16 +169,29 @@ export class Hud {
     document.getElementById('graphics-button').textContent = label;
   }
 
+  // Start screen: the story of the level about to be played, and (once more than one
+  // level is unlocked) which level that is.
+  setLevel(level, choices) {
+    document.getElementById('story').textContent = level.text.story;
+    document.getElementById('level-row').hidden = choices < 2;
+    document.getElementById('level-button').textContent = level.name;
+  }
+
   setBest(best) {
     document.getElementById('best-line').textContent = best > 0 ? `Best score: ${points(best)}` : '';
   }
 
   showResults(data) {
     const $ = (id) => document.getElementById(id);
-    $('results-title').textContent = data.won ? 'Farm secured' : 'You went down';
+    $('results-title').textContent = data.won ? data.wonTitle : 'You went down';
     $('results-sub').textContent = data.won
-      ? `All ${data.total} animals are back and the ship is leaving.`
+      ? data.wonText
       : `${data.rescued} of ${data.total} rescued. The ones that got past you will be back, and so will you.`;
+    const next = $('next-button');
+    next.hidden = !(data.won && data.nextText);
+    next.textContent = data.nextText || '';
+    $('again-button').classList.toggle('primary', next.hidden);
+    $('again-button').classList.toggle('link', !next.hidden);
 
     const stars = $('results-stars');
     stars.replaceChildren();
@@ -200,7 +215,7 @@ export class Hud {
     if (data.missed.length) {
       missed.append(el('h3', '', 'Worth remembering'));
       const list = el('div', 'missed');
-      for (const m of data.missed) list.append(el('span', '', `${m.gun} × ${m.animal} = ${m.product}`));
+      for (const fact of data.missed) list.append(el('span', '', fact));
       missed.append(list);
     }
 

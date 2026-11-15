@@ -259,6 +259,32 @@ const RECIPES = {
       blend(c, [140, 118, 62], [224, 204, 142], n * 0.5 + fine * 0.5);
       return fine;
     }),
+  // Neutral hair, meant to be tinted: moose brown, fox red, hare grey.
+  fur: () =>
+    bake(256, (u, v, c) => {
+      const hair = fbm(u, v, 96, 12, 2);
+      const tone = fbm(u + 0.3, v + 0.2, 5, 5, 3);
+      c[0] = c[1] = c[2] = 150 + hair * 60 + tone * 45;
+      return hair;
+    }),
+  // Forest floor: fallen needles and twigs, with moss where it stays damp.
+  needles: () =>
+    bake(512, (u, v, c) => {
+      const broad = fbm(u, v, 4, 4, 4);
+      const litter = fbm(u + 0.4, v + 0.1, 64, 64, 2);
+      const twig = fbm(u + 0.7, v + 0.5, 96, 8, 1);
+      blend(c, [50, 38, 26], [118, 88, 54], broad * 0.45 + litter * 0.35 + twig * 0.2);
+      if (broad > 0.6) blend(c, c, [56, 76, 40], Math.min(1, (broad - 0.6) * 2.5));
+      return litter * 0.6 + twig * 0.4;
+    }),
+  rock: () =>
+    bake(256, (u, v, c) => {
+      const broad = fbm(u, v, 4, 4, 4);
+      const grain = fbm(u + 0.2, v + 0.6, 48, 48, 2);
+      blend(c, [76, 78, 82], [150, 150, 144], broad * 0.6 + grain * 0.4);
+      if (broad > 0.58) blend(c, c, [70, 92, 56], Math.min(1, (broad - 0.58) * 3)); // moss
+      return broad * 0.5 + grain * 0.5;
+    }),
   cloth: () =>
     bake(128, (u, v, c) => {
       const weave = 0.5 + 0.25 * Math.sin(u * Math.PI * 2 * 32) + 0.25 * Math.sin(v * Math.PI * 2 * 32);

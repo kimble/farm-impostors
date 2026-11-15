@@ -9,9 +9,32 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 export const QUALITY_LEVELS = ['high', 'low'];
 export const QUALITY_LABELS = { high: 'High', low: 'Low' };
+
+// Now and then a single pixel comes out of the lighting maths as not-a-number or
+// absurdly bright (seen on the far ground at a grazing angle). On its own it is one
+// invisible dot, but the bloom would smear it over the whole picture and black the
+// screen out. This pass replaces any such pixel with black before the bloom sees it.
+const DropBrokenPixels = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      bool sound = c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0 && max(c.r, max(c.g, c.b)) < 1000.0;
+      gl_FragColor = vec4(sound ? c : vec3(0.0), 1.0);
+    }`,
+};
 
 export class Graphics {
   constructor(container) {
@@ -26,7 +49,8 @@ export class Graphics {
   }
 
   // The world is drawn first, then the held blaster on top of it (with its own depth,
-  // so it never pokes through a wall), then both are bloomed together.
+  // so it never pokes through a wall), then broken pixels are dropped and both are
+  // bloomed together.
   setScenes(world, worldCamera, held, heldCamera) {
     this.world = world;
     this.worldCamera = worldCamera;
@@ -42,6 +66,7 @@ export class Graphics {
     this.bloom = new UnrealBloomPass(size.clone(), 0.42, 0.55, 0.9);
     this.composer.addPass(new RenderPass(world, worldCamera));
     this.composer.addPass(this.heldPass);
+    this.composer.addPass(new ShaderPass(DropBrokenPixels));
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
   }

@@ -28,6 +28,33 @@ export function priorBox(a, b) {
   return 1;
 }
 
+// ---------- How a fact reads for each blaster ----------
+//
+// `gun` is the number on the blaster and `answer` the number on the impostor.
+// The × blaster asks  gun × ? = product.  The ÷ blaster asks  product ÷ gun = ?.
+
+export function equation(op, gun, answer, product) {
+  return op === '÷' ? `${product} ÷ ${gun} = ${answer}` : `${gun} × ${answer} = ${product}`;
+}
+
+// The same equation as the text before and after the missing number.
+export function equationParts(op, gun, product) {
+  return op === '÷' ? [`${product} ÷ ${gun} = `, ''] : [`${gun} × `, ` = ${product}`];
+}
+
+// The numbers in the order they are said aloud: "7 times 6 is 42", "42 divided by 7 is 6".
+export function spokenOrder(op, gun, answer, product) {
+  return op === '÷' ? [product, gun, answer] : [gun, answer, product];
+}
+
+// What the wrong animal would really have been the answer to.
+export function mistake(op, gun, shot, product) {
+  const made = gun * shot;
+  return op === '÷'
+    ? `${made} ÷ ${gun} = ${shot}, not ${product} ÷ ${gun}`
+    : `${gun} × ${shot} = ${made}, not ${product}`;
+}
+
 function median(values) {
   if (!values.length) return null;
   const sorted = [...values].sort((x, y) => x - y);

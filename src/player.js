@@ -1,6 +1,6 @@
 // First-person movement: WASD or arrow keys, Shift to run, Space to jump, mouse to look.
 
-import { SPAWN, WORLD_LIMIT } from './config.js';
+import { WORLD_LIMIT } from './config.js';
 import { resolveCollisions } from './collide.js';
 
 const EYE_HEIGHT = 1.7;
@@ -17,9 +17,10 @@ function clamp(value, min, max) {
 }
 
 export class Player {
-  constructor() {
-    this.pos = { x: SPAWN.x, y: 0, z: SPAWN.z };
-    this.yaw = SPAWN.yaw;
+  // spawn: { x, z, yaw } - where the level starts and which way the player faces.
+  constructor(spawn) {
+    this.pos = { x: spawn.x, y: 0, z: spawn.z };
+    this.yaw = spawn.yaw;
     this.pitch = 0;
     this.vy = 0;
     this.keys = new Set();

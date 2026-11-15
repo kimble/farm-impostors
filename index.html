@@ -47,10 +47,7 @@
     <section id="start" class="overlay">
       <div class="card">
         <h1>Farm Impostors</h1>
-        <p class="story">
-          Dusk. A ship hangs over the pasture, and some of the animals out there are not animals
-          any more. The disguises are perfect. Only the numbers give the machines away.
-        </p>
+        <p id="story" class="story"></p>
         <ul class="keys">
           <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</li>
           <li><kbd>Mouse</kbd> look</li>
@@ -61,6 +58,10 @@
           <li><kbd>Esc</kbd> pause</li>
           <li><kbd>M</kbd> mute · <kbd>V</kbd> voice</li>
         </ul>
+        <div id="level-row" class="setting" hidden>
+          <span>Level</span>
+          <button id="level-button" class="choice"></button>
+        </div>
         <div class="setting">
           <span>Graphics <small>choose Low if the game stutters</small></span>
           <button id="graphics-button" class="choice"></button>
@@ -95,6 +96,7 @@
         <div id="results-stats" class="stats"></div>
         <div id="results-missed"></div>
         <div id="results-grid"></div>
+        <button id="next-button" class="primary" hidden></button>
         <button id="again-button" class="primary">Play again</button>
       </div>
     </section>
