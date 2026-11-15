@@ -949,11 +949,15 @@ function endRun(won) {
 
 // ---------- Starting, pausing, input ----------
 
-function captureMouse() {
+// event: the click that asked for it, if any.
+function captureMouse(event = null) {
   // A finger (or pen) on Start means touch controls; a mouse click means the mouse.
   if (!forceTouch) setTouchMode(lastPointer !== 'mouse');
   if (touch) goFullscreen();
-  if (debug || touch) {
+  // With ?debug, only the scripted starts (window.__game) go without the capture, so a
+  // test browser can drive the game; a real click on Start still captures the mouse.
+  const scripted = debug && !(event && event.isTrusted);
+  if (scripted || touch) {
     game.running = true;
     hud.hideOverlays();
     hud.showHud();
@@ -964,7 +968,7 @@ function captureMouse() {
   if (request && request.catch) request.catch(() => hud.showPause());
 }
 
-function start() {
+function start(event = null) {
   initAudio();
   voice.unlock();
   if (game.phase === 'title') {
@@ -977,16 +981,16 @@ function start() {
       beginHunt();
     }
   }
-  captureMouse();
+  captureMouse(event);
 }
 
-function playAgain() {
+function playAgain(event = null) {
   initAudio();
   voice.unlock();
   hud.hideOverlays();
   resetRun();
   beginHunt();
-  captureMouse();
+  captureMouse(event);
 }
 
 // On a phone, fill the screen and hold it sideways where the browser allows it
