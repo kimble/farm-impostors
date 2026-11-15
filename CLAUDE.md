@@ -29,7 +29,7 @@ Commit directly on `main`; this repo does not use branches.
 
 ## Checking changes in a browser
 
-Open `http://localhost:5173/?debug`. Add `&level=forest` to open a level directly, whether or not it is unlocked. In debug mode the game runs without pointer lock and exposes `window.__game` (see the end of `src/main.js`): `start()`, `shoot()`, `step(seconds)` to advance game time without waiting, `teleport(x, z, yaw, pitch)`, `aimAt(number)`, `aimAtDrone()`, `switchBlaster(op)`, plus the live `game`, `level`, `herd`, `drone`, `world`, `graphics` and `trainer` objects. This is how the game is driven from an automated browser; no browser-automation package is a dependency of the project.
+Open `http://localhost:5173/?debug`. Add `&touch` to get the phone controls on a desktop browser. Add `&level=forest` to open a level directly, whether or not it is unlocked. In debug mode the game runs without pointer lock and exposes `window.__game` (see the end of `src/main.js`): `start()`, `shoot()`, `step(seconds)` to advance game time without waiting, `teleport(x, z, yaw, pitch)`, `aimAt(number)`, `aimAtDrone()`, `switchBlaster(op)`, plus the live `game`, `level`, `herd`, `drone`, `world`, `graphics` and `trainer` objects. This is how the game is driven from an automated browser; no browser-automation package is a dependency of the project.
 
 Sound and speech cannot be verified this way, and a software-rendered headless browser says nothing about frame rate. Teleporting with yaw and pitch both exactly 0 can black out flat ground in that browser (a relief-mapping edge case the mouse cannot reach); use a small non-zero angle.
 
@@ -69,6 +69,10 @@ A shot is one raycast from the screen centre against invisible hitbox meshes: `h
 A shot at an animal with the blaster that does not match the round's signal fizzles: no penalty, a cue to switch. `game.blasters` lists the kinds owned and `game.active` is the one in hand; `BLASTERS` in `models.js` gives each kind its colours.
 
 The hunter drone is the time limit made visible. Its distance from the player is a function of the time left, not of where the player runs (`drone.js`).
+
+### Touch screens
+
+Phones and tablets (a coarse pointer with touch points, or `?touch`) get `body.touch` and on-screen controls from `touch.js` instead of pointer lock: a floating joystick on the left half sets `player.stick`, a drag on the right half looks, the fire button keeps aiming while held, and the blaster slots in `#weapons` are tappable. The game pauses when the page is hidden, since there is no pointer lock to lose. Touch devices default to Low graphics. Any text that names a control (like the "Scroll to switch" cue) needs a touch wording too; the start screen has two control lists, `.key-help` and `.touch-help`, and CSS shows one. Below 520px of height (a phone held sideways) the HUD shrinks and the start card splits into two columns so Start stays on screen.
 
 ### Models
 

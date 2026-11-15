@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Farm Impostors</title>
     <link
       rel="icon"
@@ -14,6 +14,14 @@
     <div id="game"></div>
 
     <div id="hud" hidden>
+      <!-- Touch screens only: the whole screen takes thumbs; the buttons sit on top of it. -->
+      <div id="touch" hidden>
+        <div id="stick" hidden><div id="stick-knob"></div></div>
+        <button data-touch="pause" class="touch-button pause" aria-label="Pause">II</button>
+        <button data-touch="jump" class="touch-button jump" aria-label="Jump">⤒</button>
+        <button data-touch="fire" class="touch-button fire" aria-label="Fire"></button>
+      </div>
+
       <div id="hearts" class="panel"></div>
 
       <div id="scanner" class="panel" hidden>
@@ -45,39 +53,51 @@
     <div id="vignette"></div>
 
     <section id="start" class="overlay">
-      <div class="card">
-        <h1>Farm Impostors</h1>
-        <p id="story" class="story"></p>
-        <ul class="keys">
-          <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</li>
-          <li><kbd>Mouse</kbd> look</li>
-          <li><kbd>Click</kbd> fire</li>
-          <li><kbd>Shift</kbd> run</li>
-          <li><kbd>Space</kbd> jump</li>
-          <li><kbd>Scroll</kbd> switch blaster</li>
-          <li><kbd>Esc</kbd> pause</li>
-          <li><kbd>M</kbd> mute · <kbd>V</kbd> voice</li>
-        </ul>
-        <div id="level-row" class="setting" hidden>
-          <span>Level</span>
-          <button id="level-button" class="choice"></button>
+      <div class="card split">
+        <div class="card-main">
+          <h1>Farm Impostors</h1>
+          <p id="story" class="story"></p>
+          <ul class="keys touch-help">
+            <li><kbd>Left thumb</kbd> move</li>
+            <li><kbd>Right thumb</kbd> look</li>
+            <li><kbd>●</kbd> fire (drag it to aim)</li>
+            <li><kbd>⤒</kbd> jump</li>
+            <li><kbd>× ÷</kbd> tap to switch</li>
+            <li><kbd>II</kbd> pause</li>
+          </ul>
+          <ul class="keys key-help">
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</li>
+            <li><kbd>Mouse</kbd> look</li>
+            <li><kbd>Click</kbd> fire</li>
+            <li><kbd>Shift</kbd> run</li>
+            <li><kbd>Space</kbd> jump</li>
+            <li><kbd>Scroll</kbd> switch blaster</li>
+            <li><kbd>Esc</kbd> pause</li>
+            <li><kbd>M</kbd> mute · <kbd>V</kbd> voice</li>
+          </ul>
         </div>
-        <div class="setting">
-          <span>Graphics <small>choose Low if the game stutters</small></span>
-          <button id="graphics-button" class="choice"></button>
+        <div class="card-side">
+          <div id="level-row" class="setting" hidden>
+            <span>Level</span>
+            <button id="level-button" class="choice"></button>
+          </div>
+          <div class="setting">
+            <span>Graphics <small>choose Low if the game stutters</small></span>
+            <button id="graphics-button" class="choice"></button>
+          </div>
+          <div class="setting">
+            <span>Voice reads each fact aloud</span>
+            <button id="voice-button" class="choice"></button>
+          </div>
+          <div id="voice-pick" class="setting" hidden>
+            <span>Which voice <small id="voice-count"></small></span>
+            <button id="voice-name-button" class="choice"></button>
+          </div>
+          <p id="voice-note" class="note"></p>
+          <button id="start-button" class="primary">Start</button>
+          <div id="best-line" class="note"></div>
+          <button id="reset-button" class="link">Reset saved progress</button>
         </div>
-        <div class="setting">
-          <span>Voice reads each fact aloud</span>
-          <button id="voice-button" class="choice"></button>
-        </div>
-        <div id="voice-pick" class="setting" hidden>
-          <span>Which voice <small id="voice-count"></small></span>
-          <button id="voice-name-button" class="choice"></button>
-        </div>
-        <p id="voice-note" class="note"></p>
-        <button id="start-button" class="primary">Start</button>
-        <div id="best-line" class="note"></div>
-        <button id="reset-button" class="link">Reset saved progress</button>
       </div>
     </section>
 
@@ -100,6 +120,13 @@
         <button id="again-button" class="primary">Play again</button>
       </div>
     </section>
+
+    <div id="rotate" class="overlay">
+      <div class="card small">
+        <h2>Turn sideways</h2>
+        <p class="story">Farm Impostors is played with the phone held sideways.</p>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

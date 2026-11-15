@@ -19,11 +19,15 @@ import { Hud } from './hud.js';
 import { Voice, VOICE_MODES, VOICE_LABELS, defaultMode } from './voice.js';
 import { initAudio, sfx, toggleMute } from './audio.js';
 import { Graphics, QUALITY_LEVELS, QUALITY_LABELS } from './graphics.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 
 // `?debug` runs the game without capturing the mouse and exposes `window.__game`,
 // which is how the automated browser check drives it.
 const params = new URLSearchParams(location.search);
 const debug = params.has('debug');
+// Phones and tablets get on-screen controls instead of the mouse; `?touch` forces them.
+const touch = isTouchDevice(params);
+if (touch) document.body.classList.add('touch');
 
 const settings = loadSettings();
 if (settings.best && !settings.bests) settings.bests = { [FIRST_LEVEL]: settings.best }; // older saves
@@ -152,7 +156,8 @@ function nextVoice() {
 // ---------- Graphics setting ----------
 
 function applyGraphics() {
-  const level = QUALITY_LEVELS.includes(settings.graphics) ? settings.graphics : 'high';
+  // Phones start on Low: bloom at a phone's pixel ratio is more than most can draw smoothly.
+  const level = QUALITY_LEVELS.includes(settings.graphics) ? settings.graphics : touch ? 'low' : 'high';
   graphics.setQuality(level);
   world.setQuality(level);
   hud.setGraphicsChoice(QUALITY_LABELS[level]);
@@ -234,7 +239,8 @@ function cueBlaster() {
   const round = game.round;
   refreshHud();
   if (round && !round.done && game.active !== round.op) {
-    hud.setObjective(`This signal needs the ${round.op} blaster. Scroll to switch.`);
+    const how = touch ? 'Tap it below to switch.' : 'Scroll to switch.';
+    hud.setObjective(`This signal needs the ${round.op} blaster. ${how}`);
     game.cued = true;
   } else if (game.cued) {
     hud.setObjective('');
@@ -559,7 +565,8 @@ function endRun(won) {
 // ---------- Starting, pausing, input ----------
 
 function captureMouse() {
-  if (debug) {
+  if (touch) goFullscreen();
+  if (debug || touch) {
     game.running = true;
     hud.hideOverlays();
     hud.showHud();
@@ -572,6 +579,7 @@ function captureMouse() {
 
 function start() {
   initAudio();
+  voice.unlock();
   if (game.phase === 'title') {
     game.phase = 'explore';
     if (game.active) blaster.hold(game.active); // a blaster carried over from an earlier level
@@ -583,12 +591,48 @@ function start() {
 
 function playAgain() {
   initAudio();
+  voice.unlock();
   hud.hideOverlays();
   resetRun();
   game.phase = 'hunt';
   after(1.2, startRound);
   captureMouse();
 }
+
+// On a phone, fill the screen and hold it sideways where the browser allows it
+// (Android does; iPhones have no fullscreen for pages, so the rotate hint covers it).
+function goFullscreen() {
+  const root = document.documentElement;
+  if (document.fullscreenElement || !root.requestFullscreen) return;
+  root
+    .requestFullscreen({ navigationUI: 'hide' })
+    .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+    .catch(() => {});
+}
+
+function pause() {
+  if (!game.running || (game.phase !== 'explore' && game.phase !== 'hunt')) return;
+  game.running = false;
+  player.keys.clear();
+  if (controls) controls.reset();
+  hud.showPause();
+}
+
+// Touch screens have no pointer lock to lose, so the game pauses when the page is hidden.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && touch) pause();
+});
+
+const controls = touch
+  ? new TouchControls(player, { fire: shoot, pause, active: () => game.running })
+  : null;
+if (touch) document.getElementById('touch').hidden = false;
+
+// The blaster slots are buttons on a touch screen.
+document.getElementById('weapons').addEventListener('pointerdown', (event) => {
+  const slot = event.target.closest('.slot.owned');
+  if (slot) switchBlaster(slot.textContent);
+});
 
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === renderer.domElement) {

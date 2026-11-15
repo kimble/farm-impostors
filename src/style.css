@@ -641,3 +641,232 @@ table.grid td.b5 {
   font-size: 13px;
   color: var(--dim);
 }
+
+/* ---------- Touch screens (body.touch, set in main.js) ---------- */
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+body:not(.touch) .touch-help,
+body.touch .key-help {
+  display: none;
+}
+
+#touch {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* The joystick appears wherever the left thumb lands; its centre is at the translate. */
+#stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+#stick::before,
+#stick-knob {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+}
+
+#stick::before {
+  left: -60px;
+  top: -60px;
+  width: 120px;
+  height: 120px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(10, 16, 32, 0.3);
+}
+
+#stick-knob {
+  left: -26px;
+  top: -26px;
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+#stick.run #stick-knob {
+  background: rgba(94, 242, 255, 0.75);
+}
+
+.touch-button {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--panel);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  touch-action: none;
+}
+
+.touch-button.held {
+  background: rgba(94, 242, 255, 0.35);
+  border-color: var(--cyan);
+}
+
+.touch-button.fire {
+  right: calc(28px + env(safe-area-inset-right, 0px));
+  bottom: calc(34px + env(safe-area-inset-bottom, 0px));
+  width: 92px;
+  height: 92px;
+  border: 3px solid rgba(255, 90, 80, 0.8);
+}
+
+.touch-button.fire::after {
+  content: '';
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bad);
+}
+
+.touch-button.fire.held {
+  background: rgba(255, 90, 80, 0.35);
+}
+
+.touch-button.jump {
+  right: calc(140px + env(safe-area-inset-right, 0px));
+  bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  width: 60px;
+  height: 60px;
+  font-size: 26px;
+}
+
+.touch-button.pause {
+  left: calc(18px + env(safe-area-inset-left, 0px));
+  top: 70px;
+  width: 44px;
+  height: 44px;
+  font-size: 15px;
+  border-radius: 10px;
+}
+
+/* The blaster slots double as the switch on a touch screen. */
+body.touch #weapons {
+  pointer-events: auto;
+}
+
+
+#rotate {
+  display: none;
+  z-index: 10;
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  body.touch #rotate {
+    display: flex;
+  }
+}
+
+/* Phones held sideways are short: shrink the HUD so the farm stays visible. */
+@media (max-height: 520px) {
+  .panel {
+    top: 8px;
+    padding: 6px 12px;
+  }
+
+  #hearts {
+    left: 10px;
+    font-size: 22px;
+  }
+
+  #scanner {
+    min-width: 200px;
+  }
+
+  .equation {
+    font-size: 32px;
+  }
+
+  #progress {
+    right: 10px;
+    min-width: 130px;
+  }
+
+  #progress .value {
+    font-size: 22px;
+  }
+
+  .combo {
+    font-size: 13px;
+  }
+
+  #banner {
+    font-size: 44px;
+  }
+
+  #toast {
+    font-size: 19px;
+  }
+
+  #objective {
+    bottom: 84px;
+    font-size: 15px;
+  }
+
+  .slot {
+    width: 48px;
+    height: 48px;
+    font-size: 26px;
+  }
+
+  .touch-button.pause {
+    top: 50px;
+    left: calc(10px + env(safe-area-inset-left, 0px));
+  }
+
+  .card {
+    padding: 16px 20px;
+  }
+
+  /* The start card goes side by side, so Start is on screen without scrolling. */
+  .card.split {
+    display: flex;
+    gap: 20px;
+    width: min(880px, 100%);
+  }
+
+  .card-main,
+  .card-side {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .card-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .card-main .keys {
+    margin-bottom: 0;
+  }
+
+  .card-side .setting {
+    font-size: 14px;
+  }
+
+  .card-side .note {
+    margin-bottom: 8px;
+  }
+
+  h1 {
+    font-size: 32px;
+  }
+
+  .story {
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+}

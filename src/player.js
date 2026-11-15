@@ -1,4 +1,5 @@
 // First-person movement: WASD or arrow keys, Shift to run, Space to jump, mouse to look.
+// On a touch screen the joystick sets `stick` instead of the keys (see touch.js).
 
 import { WORLD_LIMIT } from './config.js';
 import { resolveCollisions } from './collide.js';
@@ -24,14 +25,15 @@ export class Player {
     this.pitch = 0;
     this.vy = 0;
     this.keys = new Set();
+    this.stick = { x: 0, y: 0 }; // touch joystick: x to the right, y forward, each -1..1
     this.speed = 0;
     this.bob = 0;
     this.shake = 0;
   }
 
-  look(dx, dy) {
-    this.yaw -= dx * SENSITIVITY;
-    this.pitch = clamp(this.pitch - dy * SENSITIVITY, -1.5, 1.5);
+  look(dx, dy, sensitivity = SENSITIVITY) {
+    this.yaw -= dx * sensitivity;
+    this.pitch = clamp(this.pitch - dy * sensitivity, -1.5, 1.5);
   }
 
   update(dt, colliders) {
@@ -39,12 +41,21 @@ export class Player {
     const down = (...codes) => codes.some((code) => k.has(code));
     let forward = (down('KeyW', 'ArrowUp') ? 1 : 0) - (down('KeyS', 'ArrowDown') ? 1 : 0);
     let strafe = (down('KeyD', 'ArrowRight') ? 1 : 0) - (down('KeyA', 'ArrowLeft') ? 1 : 0);
-    const length = Math.hypot(forward, strafe);
+    let length = Math.hypot(forward, strafe);
     this.speed = length ? (down('ShiftLeft', 'ShiftRight') ? RUN : WALK) : 0;
-
     if (length) {
       forward /= length;
       strafe /= length;
+    } else if (this.stick.x || this.stick.y) {
+      // The joystick walks at the speed it is pushed, and runs when pushed to the rim.
+      const push = Math.min(Math.hypot(this.stick.x, this.stick.y), 1);
+      forward = this.stick.y / Math.max(push, 1e-6);
+      strafe = this.stick.x / Math.max(push, 1e-6);
+      length = push;
+      this.speed = push > 0.92 ? RUN : WALK * Math.max(push, 0.35);
+    }
+
+    if (length) {
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       const moveX = (-sin * forward + cos * strafe) * this.speed * dt;

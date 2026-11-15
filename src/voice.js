@@ -102,6 +102,20 @@ export class Voice {
     return 'ok';
   }
 
+  // iPhones and iPads only speak once speech has been started from a tap; call this
+  // from one (the Start button) so that later facts, spoken from game events, are heard.
+  unlock() {
+    if (this.unlocked || !this.synth) return;
+    this.unlocked = true;
+    try {
+      const silent = new SpeechSynthesisUtterance(' ');
+      silent.volume = 0;
+      this.synth.speak(silent);
+    } catch {
+      // Nothing to unlock.
+    }
+  }
+
   say(op, a, b, result) {
     if (this.mode === 'off' || !this.synth) return;
     // Without a Norwegian voice, Norwegian words would be read with an English accent,
