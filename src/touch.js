@@ -8,9 +8,13 @@ const LOOK = 0.0052;
 const STICK_RADIUS = 56; // CSS pixels from the centre of the joystick to its rim
 const DEAD_ZONE = 0.12;
 
-export function isTouchDevice(params) {
+// A first guess, before the player has pressed anything: a screen with no mouse that can
+// hover. Only a guess (it sets the start screen's help and the default graphics); the
+// controls follow whatever actually presses Start, since touch-screen laptops and some
+// Linux setups report a coarse pointer while a mouse is in use.
+export function looksLikeTouch(params) {
   if (params.has('touch')) return true;
-  return window.matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0;
+  return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 }
 
 export class TouchControls {

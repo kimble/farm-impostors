@@ -34,15 +34,19 @@ import { Hud } from './hud.js';
 import { Voice, VOICE_MODES, VOICE_LABELS, defaultMode } from './voice.js';
 import { initAudio, sfx, toggleMute } from './audio.js';
 import { Graphics, QUALITY_LEVELS, QUALITY_LABELS } from './graphics.js';
-import { TouchControls, isTouchDevice } from './touch.js';
+import { TouchControls, looksLikeTouch } from './touch.js';
 
 // `?debug` runs the game without capturing the mouse and exposes `window.__game`,
 // which is how the automated browser check drives it.
 const params = new URLSearchParams(location.search);
 const debug = params.has('debug');
 // Phones and tablets get on-screen controls instead of the mouse; `?touch` forces them.
-const touch = isTouchDevice(params);
+// This starts as a guess and is settled by what presses Start (see setTouchMode).
+const forceTouch = params.has('touch');
+let touch = looksLikeTouch(params);
 if (touch) document.body.classList.add('touch');
+let lastPointer = touch ? 'touch' : 'mouse';
+document.addEventListener('pointerdown', (event) => (lastPointer = event.pointerType), true);
 
 const settings = loadSettings();
 if (settings.best && !settings.bests) settings.bests = { [FIRST_LEVEL]: settings.best }; // older saves
@@ -946,6 +950,8 @@ function endRun(won) {
 // ---------- Starting, pausing, input ----------
 
 function captureMouse() {
+  // A finger (or pen) on Start means touch controls; a mouse click means the mouse.
+  if (!forceTouch) setTouchMode(lastPointer !== 'mouse');
   if (touch) goFullscreen();
   if (debug || touch) {
     game.running = true;
@@ -1007,10 +1013,15 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && touch) pause();
 });
 
-const controls = touch
-  ? new TouchControls(player, { fire: shoot, pause, active: () => game.running })
-  : null;
-if (touch) document.getElementById('touch').hidden = false;
+let controls = null;
+function setTouchMode(on) {
+  touch = on;
+  document.body.classList.toggle('touch', on);
+  document.getElementById('touch').hidden = !on;
+  if (on && !controls) controls = new TouchControls(player, { fire: shoot, pause, active: () => game.running });
+  if (!on && controls) controls.reset();
+}
+setTouchMode(touch);
 
 // The blaster slots are buttons on a touch screen.
 document.getElementById('weapons').addEventListener('pointerdown', (event) => {
