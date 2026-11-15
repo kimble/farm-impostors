@@ -208,3 +208,79 @@ export class FactTrainer {
     return { v: 1, facts, times: this.times };
   }
 }
+
+// ---------- Other ways to ask a fact ----------
+//
+// The farm and forest ask for a missing factor. The later levels ask differently:
+//   'product' - the herd wears answers:  7 × 6 = ?   or   ? ÷ 7 = 6
+//   'dial'    - the player sets a number that goes into the product
+//   'pair'    - the player picks two numbers that multiply to the product
+// The facts stay the same 2..10 × 2..10, so every level trains the same saved store.
+
+// The text before and after the unknown when the answer is the product.
+export function productParts(op, gun, answer) {
+  return op === '÷' ? ['', ` ÷ ${gun} = ${answer}`] : [`${gun} × ${answer} = `, ''];
+}
+
+// Whether `n` goes into `product` with a partner that is also on the table (2..10).
+export function fits(n, product) {
+  if (!Number.isInteger(n) || n < MIN_FACTOR || n > MAX_FACTOR || product % n !== 0) return false;
+  const partner = product / n;
+  return partner >= MIN_FACTOR && partner <= MAX_FACTOR;
+}
+
+// Ten numbers for the herd to wear when the answer is a product: the answer and the
+// nine products closest to it from the same two tables (for 7 × 6 = 42: 36, 48, 35,
+// 49 ...), which are the ones most easily mixed up with it. Shuffled.
+export function productChoices(gun, answer, rng = Math.random) {
+  const product = gun * answer;
+  const near = new Set();
+  for (let k = 1; k <= MAX_FACTOR; k++) {
+    near.add(gun * k);
+    near.add(k * answer);
+  }
+  near.delete(product);
+  const closest = [...near]
+    .sort((x, y) => Math.abs(x - product) - Math.abs(y - product) || x - y)
+    .slice(0, 9);
+  const out = [product, ...closest];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+// Explains a wrong answer with a true fact, so a miss still teaches something.
+// Returns { text, fact }, where `fact` is { op, gun, answer, product } to say aloud
+// (or null when there is no fact worth saying).
+//   ask 'factor':  shot is the number on the animal that was hit
+//   ask 'product': shot is the product the animal was wearing
+//   ask 'dial':    shot is the number on the dial
+//   ask 'pair':    shot is the second number, `first` the one already picked
+export function explainMiss({ ask = 'factor', op = '×', gun, answer, product, shot, first = null }) {
+  const times = (a, b) => ({ op: '×', gun: a, answer: b, product: a * b });
+  if (ask === 'product') {
+    const viaGun = shot % gun === 0 && shot / gun <= MAX_FACTOR;
+    const k = viaGun ? shot / gun : shot / answer;
+    if (!viaGun && (!Number.isInteger(k) || k > MAX_FACTOR)) {
+      return { text: `${shot} is not the answer`, fact: null };
+    }
+    if (op === '÷') {
+      return viaGun
+        ? { text: `${shot} ÷ ${gun} = ${k}, not ${answer}`, fact: { op: '÷', gun, answer: k, product: shot } }
+        : { text: `${shot} ÷ ${k} = ${answer}, not ${shot} ÷ ${gun}`, fact: { op: '÷', gun: k, answer, product: shot } };
+    }
+    const fact = viaGun ? times(gun, k) : times(k, answer);
+    return { text: `${fact.gun} × ${fact.answer} = ${shot}, not ${gun} × ${answer}`, fact };
+  }
+  if (ask === 'dial' || (ask === 'pair' && first === null)) {
+    // The table row of the number he chose, at the step nearest the target.
+    const q = Math.max(1, Math.min(MAX_FACTOR, Math.round(product / shot)));
+    return { text: `${shot} × ${q} = ${shot * q}, not ${product}`, fact: times(shot, q) };
+  }
+  if (ask === 'pair') {
+    return { text: `${first} × ${shot} = ${first * shot}, not ${product}`, fact: times(first, shot) };
+  }
+  return { text: mistake(op, gun, shot, product), fact: { op, gun, answer: shot, product: gun * shot } };
+}

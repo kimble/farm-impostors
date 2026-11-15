@@ -1,6 +1,6 @@
 // Everything drawn as HTML on top of the 3D view: hearts, scanner, score, messages, menus.
 
-import { MIN_FACTOR, MAX_FACTOR, factKey, equationParts } from './facts.js';
+import { MIN_FACTOR, MAX_FACTOR, factKey } from './facts.js';
 
 const SLOTS = ['×', '÷', '+', '−'];
 
@@ -65,13 +65,14 @@ export class Hud {
     }
   }
 
-  // Shows "7 × ? = 42" or "42 ÷ 7 = ?". Pass `answer` to show the solved fact instead.
-  setEquation(op, gun, product, answer = null) {
-    const [before, after] = equationParts(op, gun, product);
+  // Shows a signal such as "7 × ? = 42": the text before the box, what is in the box
+  // (usually "?"), and the text after it. `solved` turns it green; `divide` tints it
+  // the ÷ blaster's colour.
+  setSignal({ before, box, after, solved = false, divide = false }) {
     this.scanner.hidden = false;
-    this.equation.classList.toggle('solved', answer !== null);
-    this.equation.classList.toggle('divide', op === '÷');
-    this.equation.replaceChildren(before, el('span', 'unknown', answer === null ? '?' : String(answer)), after);
+    this.equation.classList.toggle('solved', solved);
+    this.equation.classList.toggle('divide', divide);
+    this.equation.replaceChildren(before, el('span', 'unknown', String(box)), after);
   }
 
   hideScanner() {
@@ -91,8 +92,9 @@ export class Hud {
     this.threat.classList.toggle('close', fraction > 0.75);
   }
 
-  setProgress({ score, multiplier, rescued, total, wave }) {
+  setProgress({ score, multiplier, rescued, total, wave, counter }) {
     this.progress.hidden = false;
+    document.getElementById('counter').textContent = counter;
     this.score.textContent = points(score);
     this.combo.textContent = multiplier >= 2 ? `×${multiplier} combo` : '';
     this.rescued.textContent = rescued;
@@ -135,6 +137,7 @@ export class Hud {
   // wanted: the one the current signal needs, which pulses until it is in hand.
   setWeapons(owned, active, wanted = null) {
     this.weapons.replaceChildren();
+    this.weapons.classList.remove('dial');
     for (const symbol of SLOTS) {
       const has = owned.includes(symbol);
       const slot = el('div', 'slot', has ? symbol : '?');
@@ -142,6 +145,21 @@ export class Hud {
       if (has && symbol === '÷') slot.classList.add('divide');
       if (has && symbol === active) slot.classList.add('active');
       if (has && symbol === wanted && symbol !== active) slot.classList.add('wanted');
+      this.weapons.append(slot);
+    }
+  }
+
+  // The blaster's dial on the ridge, in place of the blaster slots: the numbers 2-10,
+  // the one it is set to lit up. `hint` (a number that fits) pulses after misses.
+  // On a touch screen the numbers are buttons.
+  setDial(value, hint = null) {
+    this.weapons.replaceChildren();
+    this.weapons.classList.add('dial');
+    for (let n = MIN_FACTOR; n <= MAX_FACTOR; n++) {
+      const slot = el('div', 'slot owned', n);
+      slot.dataset.dial = n;
+      if (n === value) slot.classList.add('active');
+      if (n === hint && n !== value) slot.classList.add('wanted');
       this.weapons.append(slot);
     }
   }

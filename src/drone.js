@@ -3,7 +3,7 @@
 // little time; destroying the impostor shuts it down.
 
 import * as THREE from 'three';
-import { buildDrone } from './models.js';
+import { buildDrone, numberTexture, SIGN_ASPECT } from './models.js';
 
 const MAX_SPEED = 16; // faster than the player can run, so it cannot be outrun
 const CLOSING_SPEED = 2.2; // metres it closes per second once it is on its final approach
@@ -28,6 +28,15 @@ export class Drone {
     this.group.add(this.hitbox);
     scene.add(this.group);
 
+    // On the ridge the drone wears a number. The tag hangs above it and, like the
+    // animals' tags, counts as part of it when shot.
+    this.tag = new THREE.Sprite(new THREE.SpriteMaterial({ fog: false, transparent: true }));
+    this.tag.visible = false;
+    this.tagBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ visible: false }));
+    this.tagBox.userData.drone = this;
+    scene.add(this.tag, this.tagBox);
+    this.number = null;
+
     this.active = false;
     this.elapsed = 0;
     this.limit = 1;
@@ -37,6 +46,22 @@ export class Drone {
     this.knock = new THREE.Vector3();
     this.toTarget = new THREE.Vector3();
     this.station = new THREE.Vector3();
+  }
+
+  // n: the number the drone wears, or null for none.
+  setTag(n) {
+    this.number = n;
+    this.tag.visible = n !== null;
+    if (n !== null) {
+      this.tag.material.map = numberTexture(n);
+      this.tag.material.needsUpdate = true;
+    }
+  }
+
+  // The hitboxes a shot can hit while the drone is out.
+  get hitboxes() {
+    if (!this.active) return [];
+    return this.number === null ? [this.hitbox] : [this.hitbox, this.tagBox];
   }
 
   get position() {
@@ -63,7 +88,21 @@ export class Drone {
   dismiss() {
     this.active = false;
     this.group.visible = false;
+    this.tag.visible = false;
     this.light.intensity = 0;
+  }
+
+  // Keeps the tag above the drone, sized for the distance and facing the viewer.
+  placeTag(viewer) {
+    if (this.number === null) return;
+    this.tag.visible = this.active;
+    const p = this.group.position;
+    const size = Math.max(1.1, Math.min(3.4, p.distanceTo(viewer) * 0.06));
+    this.tag.scale.set(size * SIGN_ASPECT, size, 1);
+    this.tag.position.set(p.x, p.y + 1.3 + size / 2, p.z);
+    this.tagBox.scale.set(size * SIGN_ASPECT, size, 0.1);
+    this.tagBox.position.copy(this.tag.position);
+    this.tagBox.rotation.y = Math.atan2(viewer.x - p.x, viewer.z - p.z);
   }
 
   // Shot by the player: stunned, shoved away, and its clock set back a little.
@@ -105,6 +144,7 @@ export class Drone {
       if (remaining <= 0) {
         p.copy(target);
         this.distance = 0;
+        this.placeTag(target);
         return true;
       }
 
@@ -126,6 +166,7 @@ export class Drone {
     this.distance = p.distanceTo(target);
     this.group.lookAt(target);
     if (this.stun > 0) this.group.rotation.z += Math.sin(time * 50) * 0.3;
+    this.placeTag(target);
     return false;
   }
 }

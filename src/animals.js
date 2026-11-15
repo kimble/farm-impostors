@@ -119,6 +119,18 @@ export class Herd {
     return this.animals.find((a) => a.number === number) || null;
   }
 
+  // Gives the animals new numbers: numbers[i] goes on the i-th animal. (On the
+  // mothership the scanner rewrites every tag with each signal.)
+  relabel(numbers) {
+    this.animals.forEach((a, i) => {
+      if (i >= numbers.length) return;
+      a.number = numbers[i];
+      a.sign.material.map = numberTexture(a.number);
+      a.sign.material.needsUpdate = true;
+      a.hint = false;
+    });
+  }
+
   clearHints() {
     for (const a of this.animals) a.hint = false;
   }

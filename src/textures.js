@@ -291,6 +291,47 @@ const RECIPES = {
       c[0] = c[1] = c[2] = 190 + weave * 60;
       return weave;
     }),
+  // Alien hull: square panels of dark alloy, each a slightly different shade, with
+  // deep seams and a rivet line along each edge.
+  hull: () =>
+    bake(512, (u, v, c) => {
+      const n = 4;
+      const fu = (u * n) % 1;
+      const fv = (v * n) % 1;
+      const panel = hash(Math.floor(u * n) * 7 + Math.floor(v * n) * 31);
+      const grain = fbm(u, v, 48, 48, 2);
+      const sheen = fbm(u + 0.3, v + 0.8, 6, 6, 3);
+      blend(c, [52, 58, 72], [104, 112, 130], panel * 0.55 + sheen * 0.3 + grain * 0.15);
+      const edge = Math.min(fu, fv, 1 - fu, 1 - fv);
+      if (edge < 0.012) {
+        scale(c, 0.3);
+        return 0;
+      }
+      // Rivets: small dots in a line just inside each seam.
+      const along = Math.min(fu, 1 - fu) < Math.min(fv, 1 - fv) ? fv : fu;
+      const rivet = edge > 0.025 && edge < 0.045 && Math.abs(((along * 10) % 1) - 0.5) < 0.1;
+      if (rivet) scale(c, 1.25);
+      return rivet ? 1 : 0.6 + grain * 0.2;
+    }),
+  // Canyon floor: grey grit with scattered pale stones.
+  gravel: () =>
+    bake(512, (u, v, c) => {
+      const broad = fbm(u, v, 3, 3, 4);
+      const grit = fbm(u + 0.4, v + 0.3, 96, 96, 1);
+      const stones = fbm(u + 0.7, v + 0.2, 32, 32, 2);
+      blend(c, [78, 76, 72], [138, 132, 122], broad * 0.5 + grit * 0.5);
+      if (stones > 0.66) blend(c, c, [176, 170, 158], Math.min(1, (stones - 0.66) * 5));
+      return stones * 0.6 + grit * 0.4;
+    }),
+  // Earth burnt black by a landing ship, with ash-grey streaks.
+  scorched: () =>
+    bake(512, (u, v, c) => {
+      const broad = fbm(u, v, 4, 4, 4);
+      const streak = fbm(u + 0.2, v + 0.5, 24, 4, 3);
+      const grit = fbm(u + 0.6, v + 0.1, 96, 96, 1);
+      blend(c, [22, 18, 16], [70, 62, 54], broad * 0.4 + streak * 0.4 + grit * 0.2);
+      return streak * 0.5 + grit * 0.5;
+    }),
   moon: () =>
     bake(256, (u, v, c) => {
       const seas = fbm(u, v, 4, 3, 5);

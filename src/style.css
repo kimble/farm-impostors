@@ -870,3 +870,33 @@ body.touch #weapons {
     margin-bottom: 10px;
   }
 }
+
+/* ---------- The dial (the ridge) ---------- */
+
+/* Nine numbers in place of the blaster slots. */
+#weapons.dial {
+  gap: 5px;
+}
+
+#weapons.dial .slot {
+  width: 44px;
+  height: 50px;
+  font-size: 24px;
+}
+
+/* Jumping is never needed on the ridge, and its button would sit on the dial. */
+body.dial-mode .touch-button.jump {
+  display: none;
+}
+
+@media (max-height: 520px) {
+  #weapons.dial {
+    gap: 4px;
+  }
+
+  #weapons.dial .slot {
+    width: 36px;
+    height: 42px;
+    font-size: 20px;
+  }
+}

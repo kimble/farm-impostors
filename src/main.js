@@ -4,7 +4,19 @@
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
-import { FactTrainer, equation, spokenOrder, mistake } from './facts.js';
+import {
+  FactTrainer,
+  MIN_FACTOR,
+  MAX_FACTOR,
+  factKey,
+  equation,
+  equationParts,
+  productParts,
+  productChoices,
+  spokenOrder,
+  explainMiss,
+  fits,
+} from './facts.js';
 import { LEVELS, FIRST_LEVEL, opForRound, chooseLevel } from './levels.js';
 import { BLASTERS } from './models.js';
 import { catchScore, hunterTimeLimit, waveFor, WAVES } from './score.js';
@@ -14,6 +26,9 @@ import { Herd } from './animals.js';
 import { Drone } from './drone.js';
 import { Effects, REVEAL_GLITCH, REVEAL_EXPOSED } from './effects.js';
 import { Player } from './player.js';
+import { Board } from './board.js';
+import { Swarm } from './swarm.js';
+import { Boss } from './boss.js';
 import { BlasterView, BlasterPickup } from './blaster.js';
 import { Hud } from './hud.js';
 import { Voice, VOICE_MODES, VOICE_LABELS, defaultMode } from './voice.js';
@@ -35,12 +50,26 @@ if (settings.best && !settings.bests) settings.bests = { [FIRST_LEVEL]: settings
 // `?level=forest` opens a level directly, unlocked or not.
 const level = LEVELS[params.get('level')] || LEVELS[chooseLevel(settings.level, settings.unlocked)];
 
-const HOW_TO =
-  'Destroy the animal carrying the missing number before the hunter reaches you. Hit a real animal and the ship fires back.';
 const PICKUP_RANGE = 2.3;
 const MUZZLE_DISTANCE = 0.9;
 const CENTRE = new THREE.Vector2(0, 0);
 const RED = 0xff3b2f;
+const GREEN = 0x7dff7a;
+const mode = level.mode;
+// How a signal is answered in each mode (see levels.js and the end of facts.js).
+const ASK = { herd: 'factor', gates: 'factor', products: 'product', swarm: 'dial', boss: 'pair' };
+const GATE_REACH = 14; // the next round starts this close to a gate
+const LOCKS_PER_GATE = 5;
+
+function shuffle(list) {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
 // ---------- Setup ----------
 
@@ -60,7 +89,17 @@ const player = new Player(level.spawn);
 const blaster = new BlasterView();
 blaster.scene.environment = scene.environment; // the held blaster reflects the same sky
 graphics.setScenes(scene, camera, blaster.scene, blaster.camera);
-let pickup = new BlasterPickup(scene, world.gunSpot, level.pickup);
+let pickup = level.pickup ? new BlasterPickup(scene, world.gunSpot, level.pickup) : null;
+
+// What each kind of level adds: the swarm overhead on the ridge, a board of numbers on
+// each gate in the hideout, the pilot and its power cells at the landing.
+const roamCentre = new THREE.Vector3((level.roam.minX + level.roam.maxX) / 2, 0, (level.roam.minZ + level.roam.maxZ) / 2);
+const swarm = mode === 'swarm' ? new Swarm(scene, roamCentre, CONFIG.roundsToWin) : null;
+const gates = mode === 'gates' ? world.site.gates : [];
+const locks = gates.map((gate) => new Board(scene, gate.spots, { maxSize: 1.6 }));
+const boss = mode === 'boss' ? new Boss(scene, world.site.pilot) : null;
+const cells = mode === 'boss' ? new Board(scene, world.site.cells, { maxSize: 2.6 }) : null;
+const boards = cells ? [cells] : locks;
 const hud = new Hud();
 let trainer = new FactTrainer(loadProgress());
 const voice = new Voice(settings.voice || defaultMode(navigator.language), settings.voiceNames);
@@ -88,7 +127,8 @@ const game = {
   round: null,
   log: [],
   blasters: [...level.carried], // the kinds of blaster found so far, e.g. ['×', '÷']
-  active: level.carried.at(-1) || null, // the one in hand
+  // The one in hand: the last one carried in, or the first where there is none to find.
+  active: (level.pickup ? level.carried.at(-1) : level.carried[0]) || null,
   roundsStarted: 0,
   cued: false, // the objective line is asking for the other blaster
   lastSwitch: 0,
@@ -96,12 +136,24 @@ const game = {
   slowMotion: 0, // seconds of real time left in slow motion
   sparkClock: 0,
   pingClock: 0,
+  dial: 7, // the number the blaster is set to on the ridge, where the player sets it
+  gate: 0, // in the hideout: the gate being opened
+  locks: 0, // ...and how many of its locks are open
+  waiting: false, // in the hideout: between gates, until the player walks up to the next
 };
 
 // Runs `fn` after this many seconds of play (pausing the game pauses the wait).
 function after(seconds, fn) {
   game.timers.push({ left: seconds, fn });
 }
+
+// The numbers are up from the start, so the place reads right behind the title screen.
+if (gates.length) {
+  showGate();
+  // The prisoners in the pen wear no numbers, so only the gate's numbers are read.
+  for (const animal of herd.animals) animal.sign.visible = false;
+}
+if (cells) cells.label(shuffle(range(MIN_FACTOR, MAX_FACTOR)));
 
 function resize() {
   const w = window.innerWidth;
@@ -218,12 +270,17 @@ function refreshHud() {
       rescued: game.rescued,
       total: CONFIG.roundsToWin,
       wave: game.wave,
+      counter: level.text.counter,
     });
   } else {
     hud.hideProgress();
   }
   const round = game.round;
-  hud.setWeapons(game.blasters, game.active, round && !round.done ? round.op : null);
+  if (mode === 'swarm') {
+    hud.setDial(game.dial, round && !round.done && round.hinted ? round.gun : null);
+  } else {
+    hud.setWeapons(game.blasters, game.active, round && !round.done ? round.op : null);
+  }
 }
 
 // Puts a blaster in the player's hand.
@@ -257,6 +314,52 @@ function switchBlaster(to = null) {
   holdBlaster(next);
 }
 
+// On the ridge the player sets the blaster's number: 2 to 10.
+function setDial(n) {
+  if (!game.running || mode !== 'swarm') return;
+  const value = Math.max(MIN_FACTOR, Math.min(MAX_FACTOR, n));
+  if (value === game.dial) return;
+  game.dial = value;
+  sfx.swap();
+  blaster.setScreen('×', `×${value}`);
+  refreshHud();
+  if (game.round && !game.round.done) showSignal();
+}
+
+const DIAL_HELP = 'Set the dial with the scroll wheel or the number keys (0 is 10).';
+const DIAL_HELP_TOUCH = 'Tap a number at the bottom to set the dial.';
+
+// ---------- The scanner ----------
+
+// The signal as the scanner shows it: [text before the box, what is in the box, text after].
+function signalParts(round, solved) {
+  const { op, gun, animal, product } = round;
+  if (round.ask === 'product') {
+    const [before, after] = productParts(op, gun, animal);
+    return [before, solved ? product : '?', after];
+  }
+  if (round.ask === 'dial') {
+    // The box shows the dial as it turns: "7 × ? = 56".
+    const set = solved ? round.used[0] : game.dial;
+    return ['', set, solved ? ` × ${product / set} = ${product}` : ` × ? = ${product}`];
+  }
+  if (round.ask === 'pair') {
+    if (solved) return [`${round.used[0]} × `, round.used[1], ` = ${product}`];
+    if (round.first !== null) return [`${round.first} × `, '?', ` = ${product}`];
+    return ['', '?', ` × ? = ${product}`];
+  }
+  const [before, after] = equationParts(op, gun, product);
+  return [before, solved ? animal : '?', after];
+}
+
+function showSignal(solved = false) {
+  const round = game.round;
+  const [before, box, after] = signalParts(round, solved);
+  hud.setSignal({ before, box, after, solved, divide: round.op === '÷' });
+}
+
+// ---------- Rounds ----------
+
 function resetRun() {
   game.hearts = CONFIG.maxHearts;
   game.rescued = 0;
@@ -274,6 +377,20 @@ function resetRun() {
   drone.dismiss();
   hud.hideScanner();
   hud.setThreat(null);
+  // Put back whatever the last run used up: the swarm, the gates, the pilot.
+  if (swarm) swarm.reset(CONFIG.roundsToWin);
+  if (boss) {
+    boss.reset();
+    cells.show(true);
+  }
+  if (gates.length) {
+    gates.forEach((gate) => gate.lock());
+    game.gate = 0;
+    game.locks = 0;
+    showGate();
+    Object.assign(player.pos, { x: level.spawn.x, y: 0, z: level.spawn.z });
+    player.yaw = level.spawn.yaw;
+  }
   refreshHud();
 }
 
@@ -287,8 +404,34 @@ function pickUpBlaster() {
   hud.toast(level.text.found, 'info', 2.5);
   hud.setObjective(level.text.go);
   after(2, () => {
-    hud.setObjective(HOW_TO);
+    hud.setObjective(level.text.how);
     startRound();
+  });
+}
+
+// Levels with no blaster to find go straight to the hunt.
+function beginHunt() {
+  game.phase = 'hunt';
+  refreshHud();
+  if (mode === 'swarm') blaster.setScreen('×', `×${game.dial}`);
+  if (mode === 'gates') {
+    // The first signal comes when he walks up to the first gate.
+    game.waiting = true;
+    hud.setObjective(level.text.go);
+    return;
+  }
+  hud.setObjective(level.text.go);
+  after(3, () => {
+    hud.setObjective(mode === 'swarm' ? `${level.text.how} ${touch ? DIAL_HELP_TOUCH : DIAL_HELP}` : level.text.how);
+    startRound();
+  });
+}
+
+// In the hideout only the gate being opened shows its numbers.
+function showGate() {
+  locks.forEach((board, i) => {
+    board.show(i === game.gate);
+    if (i === game.gate) board.label(shuffle(range(1, 10)));
   });
 }
 
@@ -297,21 +440,71 @@ function startRound() {
   const fact = trainer.next();
   const op = opForRound(level, game.roundsStarted);
   game.roundsStarted += 1;
-  if (!herd.find(fact.animal)) herd.spawn(fact.animal, level.herd[0]);
   const limit = hunterTimeLimit({
     typicalMs: trainer.typicalMs(),
     wave: game.wave,
     first: game.firstSignal,
   });
   game.firstSignal = false;
-  game.round = { ...fact, op, startedAt: game.time, misses: 0, hinted: false, done: false, limit };
-  hud.setEquation(op, fact.gun, fact.product);
+  const round = {
+    ...fact,
+    op,
+    ask: ASK[mode],
+    target: fact.animal, // the number to shoot, where there is one
+    first: null, // at the landing: the first power cell picked
+    used: null, // on the ridge and at the landing: the two factors he chose
+    startedAt: game.time,
+    misses: 0,
+    hinted: false,
+    done: false,
+    limit,
+  };
+  game.round = round;
+
+  if (mode === 'herd') {
+    if (!herd.find(fact.animal)) herd.spawn(fact.animal, level.herd[0]);
+  } else if (mode === 'products') {
+    // The scanner rewrites every tag: the answer and the products closest to it.
+    round.target = fact.product;
+    herd.relabel(productChoices(fact.gun, fact.animal));
+    if (!herd.find(round.target)) herd.animals[0].number = round.target;
+  } else if (mode === 'gates') {
+    locks[game.gate].label(shuffle(range(1, 10)));
+  } else if (mode === 'boss') {
+    round.target = null;
+    cells.label(shuffle(range(MIN_FACTOR, MAX_FACTOR)));
+    boss.setNumber(fact.product);
+  } else if (mode === 'swarm') {
+    round.target = null;
+  }
+
+  showSignal();
   // Only the blaster that fits this signal gets a number.
-  for (const owned of game.blasters) blaster.setScreen(owned, owned === op ? `${op}${fact.gun}` : `${owned}–`);
+  for (const owned of game.blasters) {
+    let screen = owned === op ? `${op}${fact.gun}` : `${owned}–`;
+    if (mode === 'swarm') screen = `×${game.dial}`;
+    if (mode === 'boss') screen = owned === op ? `${op}?` : `${owned}–`;
+    blaster.setScreen(owned, screen);
+  }
   cueBlaster();
-  drone.launch(world.ufo.position, limit);
+
+  // The hunter: on the ridge it is one of the swarm, wearing the product; at the landing
+  // the pilot sends it; everywhere else it comes from the ship.
+  let from = world.ufo.position;
+  if (swarm) from = swarm.release(eye);
+  if (boss) from = boss.chest;
+  drone.setTag(mode === 'swarm' ? fact.product : null);
+  drone.launch(from, limit);
   game.pingClock = 1;
   sfx.launch();
+}
+
+// Every numbered thing a shot can hit right now. (The animals in the hideout's pen are
+// prisoners, not targets.)
+function numberedHitboxes() {
+  const list = mode === 'gates' ? [] : [...herd.hitboxes];
+  for (const board of boards) list.push(...board.hitboxes);
+  return list;
 }
 
 function shoot() {
@@ -324,8 +517,8 @@ function shoot() {
   scene.updateMatrixWorld();
   camera.updateMatrixWorld();
   raycaster.setFromCamera(CENTRE, camera);
-  const targets = [...herd.hitboxes, ...world.solids];
-  if (drone.active) targets.push(drone.hitbox);
+  const targets = [...numberedHitboxes(), ...world.solids, ...drone.hitboxes];
+  if (boss) targets.push(boss.hitbox);
   const hit = raycaster.intersectObjects(targets, false)[0];
   const to = hit ? hit.point.clone() : raycaster.ray.at(150, new THREE.Vector3());
 
@@ -335,16 +528,32 @@ function shoot() {
   effects.beam(from, to, { color: BLASTERS[game.active].beam });
   if (!hit) return;
 
+  const round = game.round;
+  const live = round && !round.done;
+
   if (hit.object.userData.drone) {
+    if (mode === 'swarm' && live) {
+      // On the ridge the drone is the target, and the dial is the answer.
+      if (fits(game.dial, round.product)) solve(null, [game.dial, round.product / game.dial]);
+      else miss(null, to, game.dial);
+      return;
+    }
     drone.hit(raycaster.ray.direction);
     effects.burst(to, [RED, 0xffffff], 12, 6, 0.4, 0.1);
     sfx.clang();
     return;
   }
+  if (hit.object.userData.boss) {
+    // The shield turns blaster fire. Only the power cells can hurt it.
+    effects.burst(to, [GREEN, 0xffffff], 10, 5, 0.4, 0.1);
+    sfx.clang();
+    if (live) hud.toast('Blasters bounce off the shield. Use the power cells.', 'info', 2.2);
+    return;
+  }
 
-  const animal = hit.object.userData.animal;
-  const round = game.round;
-  if (!animal || !round || round.done) {
+  const target = hit.object.userData.animal || hit.object.userData.target;
+  const counts = target && live && (mode !== 'gates' || locks[game.gate].items.includes(target));
+  if (!counts || mode === 'swarm') {
     effects.burst(to, 0x9ff6ff, 5, 3, 0.3, 0.08);
     return;
   }
@@ -355,8 +564,51 @@ function shoot() {
     hud.toast('Wrong blaster for this signal', 'info', 1.8);
     return;
   }
-  if (animal.number === round.animal) destroyImpostor(animal);
-  else hitRealAnimal(animal, to);
+  if (mode === 'boss') cellShot(target, to);
+  else if (target.number === round.target) solve(target);
+  else miss(target, to, target.number);
+}
+
+// At the landing: the first cell must go into the pilot's number, the second must
+// complete it.
+function cellShot(cell, point) {
+  const round = game.round;
+  const n = cell.number;
+  if (round.first === null) {
+    if (!fits(n, round.product)) {
+      miss(cell, point, n);
+      return;
+    }
+    round.first = n;
+    cell.lit = true;
+    effects.column(cell.position.clone().setY(0), GREEN, 0.5);
+    effects.burst(cell.position, [GREEN, 0xffffff], 10, 4, 0.4, 0.1);
+    sfx.pickup();
+    herd.clearHints();
+    cells.clearHints();
+    if (round.hinted) hintAt(round);
+    showSignal();
+    return;
+  }
+  if (round.first * n === round.product) solve(cell, [round.first, n]);
+  else miss(cell, point, n);
+}
+
+// The scanner locks on after repeated setbacks: the target (or, where the player picks
+// the numbers, one that fits) starts to glitch.
+function hintAt(round) {
+  if (mode === 'herd' || mode === 'products') {
+    const impostor = herd.find(round.target);
+    if (impostor) impostor.hint = true;
+  } else if (mode === 'gates') {
+    const lock = locks[game.gate].find(round.target);
+    if (lock) lock.hint = true;
+  } else if (mode === 'boss') {
+    const want = round.first === null ? round.gun : round.product / round.first;
+    const cell = cells.find(want);
+    if (cell) cell.hint = true;
+  }
+  refreshHud(); // on the ridge the dial pulses at a number that fits
 }
 
 // Shared by wrong shots and hunter strikes.
@@ -373,26 +625,50 @@ function loseHeart(round) {
   }
   if (round.misses >= CONFIG.hintAfterMisses && !round.hinted) {
     round.hinted = true;
-    const impostor = herd.find(round.animal);
-    if (impostor) impostor.hint = true;
-    hud.setObjective('Scanner locked on. The glitching tag is your target.');
+    hintAt(round);
+    hud.setObjective(
+      mode === 'swarm'
+        ? 'Scanner locked on. The flashing number on the dial fits.'
+        : 'Scanner locked on. The glitching tag is your target.',
+    );
     sfx.hint();
   }
 }
 
-function hitRealAnimal(animal, point) {
+// A wrong answer: the true fact behind it is shown and said, and something fires back.
+// target: what was hit (null on the ridge); shot: the number that was chosen.
+function miss(target, point, shot) {
   const round = game.round;
-  const made = round.gun * animal.number;
-  herd.startle(animal, player.pos);
+  const { text, fact } = explainMiss({
+    ask: round.ask,
+    op: round.op,
+    gun: round.gun,
+    answer: round.animal,
+    product: round.product,
+    shot,
+    first: round.first,
+  });
   effects.burst(point, RED, 8, 4, 0.4, 0.1);
-
-  // The ship answers a wrong shot.
-  effects.beam(world.ufo.position, eye.clone().setY(eye.y - 0.5), { color: RED, width: 0.35, seconds: 0.3 });
+  const at = eye.clone().setY(eye.y - 0.5);
+  if (mode === 'herd' || mode === 'products') {
+    herd.startle(target, player.pos);
+    // The ship answers a wrong shot.
+    effects.beam(world.ufo.position, at, { color: RED, width: 0.35, seconds: 0.3 });
+  } else if (mode === 'gates') {
+    locks[game.gate].flash(target, RED, 1.2);
+    effects.beam(new THREE.Vector3(0, 7.5, gates[game.gate].z), at, { color: RED, width: 0.3, seconds: 0.3 });
+  } else if (mode === 'boss') {
+    cells.flash(target, RED, 1.2);
+    effects.beam(boss.chest, at, { color: GREEN, width: 0.45, seconds: 0.35 });
+  } else if (mode === 'swarm') {
+    // The drone shrugs it off and fires back.
+    effects.burst(drone.position, [RED, 0xffffff], 10, 5, 0.4, 0.1);
+    effects.beam(drone.position, at, { color: RED, width: 0.25, seconds: 0.3 });
+  }
   sfx.wrong();
   sfx.bolt();
-  // Say and show the true fact that the animal he shot belongs to.
-  voice.say(round.op, ...spokenOrder(round.op, round.gun, animal.number, made));
-  hud.toast(`WRONG TARGET   ${mistake(round.op, round.gun, animal.number, round.product)}`, 'bad', 3.4);
+  if (fact) voice.say(fact.op, ...spokenOrder(fact.op, fact.gun, fact.answer, fact.product));
+  hud.toast(`WRONG   ${text}`, 'bad', 3.4);
   loseHeart(round);
 }
 
@@ -400,23 +676,34 @@ function hunterStrike() {
   const round = game.round;
   effects.burst(eye, [RED, 0xffffff], 14, 5, 0.4, 0.1);
   sfx.strike();
-  hud.toast('The hunter got you. Destroy the impostor to shut it down.', 'bad', 3);
+  hud.toast(
+    mode === 'swarm' ? 'The drone got you. Set the dial and bring it down.' : 'The hunter got you. Answer the signal to shut it down.',
+    'bad',
+    3,
+  );
   drone.retreat();
   loseHeart(round);
 }
 
-function destroyImpostor(animal) {
+// A right answer. target: what was hit (null on the ridge). used: the two factors the
+// player chose, where he chooses them (the ridge and the landing).
+function solve(target, used = null) {
   const round = game.round;
   round.done = true;
+  round.used = used;
   const firstTry = round.misses === 0;
   const elapsed = game.time - round.startedAt;
-  trainer.record(round.key, { firstTry, ms: elapsed * 1000 });
+  // The fact as he answered it: where he picks the factors, the pair he picked.
+  const fact = used
+    ? { op: '×', gun: used[0], answer: used[1], product: round.product, key: factKey(used[0], used[1]) }
+    : { op: round.op, gun: round.gun, answer: round.animal, product: round.product, key: round.key };
+  trainer.record(fact.key, { firstTry, ms: elapsed * 1000 });
   saveProgress(trainer.toJSON());
   game.log.push({
-    op: round.op,
-    gun: round.gun,
-    animal: round.animal,
-    product: round.product,
+    op: fact.op,
+    gun: fact.gun,
+    animal: fact.answer,
+    product: fact.product,
     firstTry,
     ms: elapsed * 1000,
   });
@@ -434,18 +721,140 @@ function destroyImpostor(animal) {
   const { points } = catchScore({ firstTry, combo: game.streak, elapsed, limit: round.limit });
   game.score += points;
 
+  // Say and show the whole fact at the moment of success: this is the part that sticks.
+  const text = equation(fact.op, fact.gun, fact.answer, fact.product);
+  voice.say(fact.op, ...spokenOrder(fact.op, fact.gun, fact.answer, fact.product));
+
+  const won = game.rescued >= CONFIG.roundsToWin;
+  celebrate(target, text, won);
+  if (bonusHeart) after(1.6, () => sfx.heart());
+
+  // The hunter loses its link and blows up (on the ridge it already has).
+  if (drone.active) {
+    effects.explosion(drone.position.clone(), 0.6);
+    drone.dismiss();
+  }
+  hud.setThreat(null);
+  showSignal(true);
+  game.cued = false;
+  // Only the fact goes in the message; the points appear by the score instead.
+  hud.toast(text, 'good', 2.4);
+  hud.scoreGain(points, bonusHeart);
+  hud.setObjective('');
+
+  const wave = waveFor(game.rescued);
+  if (wave !== game.wave && !won) {
+    game.wave = wave;
+    herd.pace = 1 + CONFIG.herdPacePerWave * (wave - 1);
+    if (boss) boss.rage = (wave - 1) / 3;
+    // In the hideout a new wave is a new gate, which has its own moment.
+    if (mode !== 'gates') {
+      after(1.6, () => {
+        hud.banner(wave === WAVES ? 'FINAL WAVE' : `WAVE ${wave}`);
+        sfx.wave();
+      });
+    }
+  }
+  refreshHud();
+}
+
+// What a right answer looks like, which differs from level to level, and what comes next.
+function celebrate(target, text, won) {
+  const round = game.round;
+  const next = (seconds) => (won ? after(seconds + 0.2, () => endRun(true)) : after(seconds, startRound));
+
+  if (mode === 'swarm') {
+    // The drone itself is blown out of the sky.
+    const at = drone.position.clone();
+    effects.explosion(at, 1.3);
+    effects.floatText(at.clone().setY(at.y + 2), text, '#7dff5a', camera.position);
+    drone.dismiss();
+    sfx.correct();
+    after(0.15, () => sfx.boom());
+    next(2.2);
+    return;
+  }
+
+  if (mode === 'gates') {
+    const board = locks[game.gate];
+    const gate = gates[game.gate];
+    board.flash(target, GREEN, 1.5);
+    effects.burst(target.position, [GREEN, 0xffffff], 18, 5, 0.5, 0.12);
+    effects.floatText(new THREE.Vector3(0, 5.5, gate.z + 1.5), text, '#7dff5a', camera.position);
+    game.locks += 1;
+    gate.setLocks(game.locks);
+    sfx.correct();
+    if (game.locks < LOCKS_PER_GATE) {
+      next(1.8);
+      return;
+    }
+    // The fifth lock: the gate opens, and the next round waits for the next gate.
+    after(0.9, () => {
+      gate.unlock();
+      board.show(false);
+      effects.burst(new THREE.Vector3(0, 3.5, gate.z), [0x5ef2ff, 0xffffff], 40, 9, 0.8, 0.14);
+      sfx.boom();
+      hud.banner(won ? 'ALL GATES OPEN' : `GATE ${game.gate + 1} OPEN`);
+      if (won) {
+        hud.setObjective('');
+        after(2.5, () => endRun(true));
+        return;
+      }
+      game.gate += 1;
+      game.locks = 0;
+      showGate();
+      game.waiting = true;
+      hud.setObjective(level.text.gateOpen);
+    });
+    return;
+  }
+
+  if (mode === 'boss') {
+    // Both cells fire into the pilot's shield.
+    const first = cells.find(round.used[0]);
+    const second = target;
+    const chest = boss.chest;
+    for (const cell of [first, second]) {
+      if (!cell) continue;
+      cell.lit = false;
+      cells.flash(cell, GREEN, 1.2);
+      effects.beam(cell.position, chest, { color: GREEN, width: 0.3, seconds: 0.6 });
+    }
+    effects.floatText(chest.clone().setY(chest.y + 5), text, '#7dff5a', camera.position);
+    boss.setNumber(null);
+    boss.hit(1 - game.rescued / CONFIG.roundsToWin);
+    effects.burst(chest, [GREEN, 0xffffff], 30, 9, 0.6, 0.16);
+    sfx.correct();
+    after(0.3, () => sfx.boom());
+    if (!won) {
+      next(2.6);
+      return;
+    }
+    // The last hit: the shield fails and the pilot falls.
+    cells.show(false);
+    after(0.8, () => {
+      boss.defeat();
+      sfx.screech();
+      game.slowMotion = 0.6;
+    });
+    for (const [t, dx, dy] of [[1.2, 0, 0], [1.8, -2, 3], [2.4, 2, -1], [3.2, 0, -4]]) {
+      after(t, () => {
+        effects.explosion(chest.clone().add(new THREE.Vector3(dx, dy, 0)), 1.6);
+        sfx.boom();
+      });
+    }
+    after(4.4, () => endRun(true));
+    return;
+  }
+
+  // Herd levels: the unmasking. The disguise glitches, is blown off, the alien stands
+  // exposed in a moment of slow motion, then explodes.
+  const animal = target;
   const spot = { x: animal.group.position.x, z: animal.group.position.z };
   const { number, species, height } = animal;
-  const fact = equation(round.op, round.gun, round.animal, round.product);
-
-  // Say and show the whole fact at the moment of success: this is the part that sticks.
-  voice.say(round.op, ...spokenOrder(round.op, round.gun, round.animal, round.product));
   // The text starts above the alien's head (it stands taller than the animal did).
   const textY = Math.max(height + 0.8, 5.2);
-  effects.floatText(new THREE.Vector3(spot.x, textY, spot.z), fact, '#7dff7a', camera.position);
-
-  // Unmasking: the disguise glitches, is blown off, the alien stands exposed in a
-  // moment of slow motion, then explodes.
+  effects.floatText(new THREE.Vector3(spot.x, textY, spot.z), text, '#7dff7a', camera.position);
   herd.detach(animal);
   effects.reveal(animal, camera.position);
   sfx.correct();
@@ -454,40 +863,12 @@ function destroyImpostor(animal) {
     game.slowMotion = 0.45;
   });
   after(REVEAL_GLITCH + REVEAL_EXPOSED, () => sfx.boom());
-  if (bonusHeart) after(1.6, () => sfx.heart());
-
-  // The hunter loses its link to the impostor and blows up.
-  if (drone.active) {
-    effects.explosion(drone.position.clone(), 0.6);
-    drone.dismiss();
-  }
-  hud.setThreat(null);
-  hud.setEquation(round.op, round.gun, round.product, round.animal);
-  game.cued = false;
-  // Only the fact goes in the message; the points appear by the score instead.
-  hud.toast(fact, 'good', 2.4);
-  hud.scoreGain(points, bonusHeart);
-  hud.setObjective('');
-
-  const wave = waveFor(game.rescued);
-  const won = game.rescued >= CONFIG.roundsToWin;
-  if (wave !== game.wave && !won) {
-    game.wave = wave;
-    herd.pace = 1 + CONFIG.herdPacePerWave * (wave - 1);
-    after(1.6, () => {
-      hud.banner(wave === WAVES ? 'FINAL WAVE' : `WAVE ${wave}`);
-      sfx.wave();
-    });
-  }
-  refreshHud();
-
   // Once the alien is gone, the real animal it replaced is beamed back down.
   after(1.8, () => {
     herd.spawn(number, species, { at: spot, drop: true });
     effects.column(new THREE.Vector3(spot.x, 0, spot.z), 0xfff2a8, 1.5);
   });
-  if (won) after(2.9, () => endRun(true));
-  else after(2.7, startRound);
+  next(2.7);
 }
 
 function summarise(won) {
@@ -581,10 +962,14 @@ function start() {
   initAudio();
   voice.unlock();
   if (game.phase === 'title') {
-    game.phase = 'explore';
     if (game.active) blaster.hold(game.active); // a blaster carried over from an earlier level
-    refreshHud();
-    hud.setObjective(level.text.find);
+    if (level.pickup) {
+      game.phase = 'explore';
+      refreshHud();
+      hud.setObjective(level.text.find);
+    } else {
+      beginHunt();
+    }
   }
   captureMouse();
 }
@@ -594,8 +979,7 @@ function playAgain() {
   voice.unlock();
   hud.hideOverlays();
   resetRun();
-  game.phase = 'hunt';
-  after(1.2, startRound);
+  beginHunt();
   captureMouse();
 }
 
@@ -631,8 +1015,16 @@ if (touch) document.getElementById('touch').hidden = false;
 // The blaster slots are buttons on a touch screen.
 document.getElementById('weapons').addEventListener('pointerdown', (event) => {
   const slot = event.target.closest('.slot.owned');
-  if (slot) switchBlaster(slot.textContent);
+  if (!slot) return;
+  if (slot.dataset.dial) setDial(Number(slot.dataset.dial));
+  else switchBlaster(slot.textContent);
 });
+if (mode === 'swarm') {
+  document.body.classList.add('dial-mode');
+  // The start screen's controls: on the ridge the wheel and keys turn the dial.
+  document.getElementById('switch-help').innerHTML = '<kbd>Scroll</kbd><kbd>2</kbd>–<kbd>0</kbd> set the dial';
+  document.getElementById('switch-help-touch').innerHTML = '<kbd>2 … 10</kbd> tap to set the dial';
+}
 
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement === renderer.domElement) {
@@ -669,8 +1061,14 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (!game.running) return;
-  if (event.code === 'Digit1') switchBlaster('×');
-  if (event.code === 'Digit2') switchBlaster('÷');
+  if (mode === 'swarm') {
+    // The number keys set the dial: 2-9, and 0 for 10.
+    const digit = /^(?:Digit|Numpad)(\d)$/.exec(event.code);
+    if (digit && digit[1] !== '1') setDial(digit[1] === '0' ? 10 : Number(digit[1]));
+  } else {
+    if (event.code === 'Digit1') switchBlaster('×');
+    if (event.code === 'Digit2') switchBlaster('÷');
+  }
   if (event.code === 'Space' || event.code.startsWith('Arrow')) event.preventDefault();
   player.keys.add(event.code);
 });
@@ -680,11 +1078,13 @@ window.addEventListener('blur', () => player.keys.clear());
 
 // The scroll wheel (or the 1 and 2 keys) switches between the blasters found so far.
 // One turn of the wheel sends a burst of events, so only the first one counts.
-window.addEventListener('wheel', () => {
+// On the ridge it turns the dial instead, one number per notch.
+window.addEventListener('wheel', (event) => {
   const now = performance.now();
-  if (now - game.lastSwitch < 250) return;
+  if (now - game.lastSwitch < (mode === 'swarm' ? 70 : 250)) return;
   game.lastSwitch = now;
-  switchBlaster();
+  if (mode === 'swarm') setDial(game.dial + (event.deltaY > 0 ? 1 : -1));
+  else switchBlaster();
 });
 
 document.getElementById('start-button').addEventListener('click', start);
@@ -721,10 +1121,16 @@ function update(dt) {
   lamp.position.copy(camera.position);
   eye.set(player.pos.x, player.pos.y + 1.5, player.pos.z);
 
-  world.update(dt, game.time, camera.position);
-  herd.update(dt, camera.position, game.time);
+  updateSite(dt);
   effects.update(dt);
   blaster.update(dt, player.speed);
+
+  // In the hideout, the next signal comes when he walks up to the next gate.
+  if (game.waiting && game.phase === 'hunt' && player.pos.z < gates[game.gate].z + GATE_REACH) {
+    game.waiting = false;
+    hud.setObjective(level.text.how);
+    startRound();
+  }
 
   if (pickup) {
     pickup.update(dt, game.time);
@@ -759,11 +1165,19 @@ function update(dt) {
   }
 }
 
-// Behind the title screen the farm is alive but nothing is at stake yet.
-function idle(dt) {
-  game.time += dt;
+// Everything that moves on its own: scenery, animals, the swarm, the pilot, the numbers.
+function updateSite(dt) {
   world.update(dt, game.time, camera.position);
   herd.update(dt, camera.position, game.time);
+  if (swarm) swarm.update(dt, game.time);
+  if (boss) boss.update(dt, game.time);
+  for (const board of boards) board.update(dt, camera.position, game.time);
+}
+
+// Behind the title screen the place is alive but nothing is at stake yet.
+function idle(dt) {
+  game.time += dt;
+  updateSite(dt);
   if (pickup) pickup.update(dt, game.time);
 }
 
@@ -803,6 +1217,9 @@ if (debug) {
     camera,
     level,
     blaster,
+    swarm,
+    boss,
+    boards,
     switchBlaster,
     get trainer() {
       return trainer;
@@ -820,17 +1237,29 @@ if (debug) {
       player.pitch = pitch;
       player.applyTo(camera);
     },
-    // Stand a few metres south of the animal wearing `number` and aim at it.
+    setDial,
+    // The number the current signal wants shot (the first factor, at the landing).
+    get answer() {
+      const round = game.round;
+      if (!round) return null;
+      if (mode === 'boss') return round.first === null ? round.gun : round.product / round.first;
+      if (mode === 'swarm') return round.gun;
+      return round.target;
+    },
+    // Stand a few metres south of whatever wears `number` (an animal, a lock on the
+    // gate being opened, a power cell) and aim at it.
     aimAt(number) {
-      const animal = herd.find(number);
-      if (!animal) return false;
-      const p = animal.group.position;
-      Object.assign(player.pos, { x: p.x, z: p.z + 4 });
+      const animal = mode === 'herd' || mode === 'products' ? herd.find(number) : null;
+      const item = animal ? null : boards.filter((b) => b.visible).map((b) => b.find(number)).find(Boolean);
+      if (!animal && !item) return false;
+      const p = animal ? animal.group.position : item.position;
+      const aimY = animal ? p.y + animal.height * 0.5 : p.y;
+      const back = animal ? 4 : 6;
+      Object.assign(player.pos, { x: p.x, z: p.z + back });
       player.shake = 0;
       player.bob = 0;
-      const dy = p.y + animal.height * 0.5 - (1.7 + player.pos.y);
       player.yaw = 0;
-      player.pitch = Math.atan2(dy, 4);
+      player.pitch = Math.atan2(aimY - (1.7 + player.pos.y), back);
       player.applyTo(camera);
       return true;
     },

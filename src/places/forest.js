@@ -7,7 +7,7 @@ import { LEVELS } from '../levels.js';
 import { ball, limb, rounded, mat, skin, glow } from '../models.js';
 import { fbm, cloudTexture, glowTexture } from '../textures.js';
 import { buildCrop } from '../grass.js';
-import { inside, softBox, softDisc } from './shapes.js';
+import { inside, softBox, softDisc, rockGeometry } from './shapes.js';
 
 const CLEARING = LEVELS.forest.roam;
 const SPAWN = LEVELS.forest.spawn;
@@ -35,21 +35,6 @@ function treeless(x, z) {
     Math.hypot(x - CRASH.x, z - CRASH.z) < 10 ||
     Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8
   );
-}
-
-// A boulder: a ball pushed in and out until it stops looking like one.
-function rockGeometry(seed) {
-  const geometry = new THREE.SphereGeometry(1, 11, 8);
-  const pos = geometry.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    const r = 0.62 + fbm(x * 0.6 + z * 0.3 + seed, y * 0.6 - z * 0.25 + seed * 0.6, 3, 3, 3) * 0.75;
-    pos.setXYZ(i, x * r, y * r * 0.72, z * r);
-  }
-  geometry.computeVertexNormals();
-  return geometry;
 }
 
 export const forest = {
