@@ -1,0 +1,617 @@
+:root {
+  --panel: rgba(10, 16, 32, 0.74);
+  --line: rgba(94, 242, 255, 0.55);
+  --cyan: #5ef2ff;
+  --good: #7dff7a;
+  --bad: #ff6b5e;
+  --text: #f2f6ff;
+  --dim: #9aa6c4;
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0a1020;
+  color: var(--text);
+  user-select: none;
+}
+
+#game,
+#game canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---------- HUD ---------- */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.panel {
+  position: absolute;
+  top: 18px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+}
+
+.label {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+#hearts {
+  left: 18px;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: 4px;
+  color: var(--bad);
+}
+
+#hearts .lost {
+  color: rgba(255, 255, 255, 0.18);
+}
+
+#scanner {
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  min-width: 260px;
+}
+
+.equation {
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: 44px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.equation .unknown {
+  display: inline-block;
+  min-width: 1.3em;
+  color: #0a1020;
+  background: var(--cyan);
+  border-radius: 8px;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.equation.solved .unknown {
+  background: var(--good);
+  animation: none;
+}
+
+.equation.solved {
+  color: var(--good);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Hunter drone: fills up as it closes in. */
+.threat {
+  margin-top: 6px;
+}
+
+.threat-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#threat-fill {
+  height: 100%;
+  width: 0;
+  background: var(--bad);
+}
+
+.threat-label {
+  margin-top: 3px;
+  min-height: 1.2em;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.threat.close .threat-label {
+  color: var(--bad);
+  animation: pulse 0.5s ease-in-out infinite;
+}
+
+#progress {
+  right: 18px;
+  text-align: right;
+  min-width: 170px;
+}
+
+#progress .value {
+  font-family: ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.combo {
+  min-height: 1.3em;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffd84a;
+}
+
+/* Points just earned, shown under the score panel so they are never read as part of a sum. */
+#score-gain {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  margin-top: 8px;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: 700;
+  color: #7dff7a;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+}
+
+#score-gain.show {
+  animation: score-gain 2.2s ease-out;
+}
+
+@keyframes score-gain {
+  0% { opacity: 0; transform: translateY(14px); }
+  12% { opacity: 1; transform: translateY(0); }
+  75% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+#progress .sub {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+#banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26%;
+  text-align: center;
+  font-size: 72px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--text);
+  text-shadow: 0 0 24px rgba(255, 59, 47, 0.9), 0 4px 0 rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: scale(1.4);
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+#banner.show {
+  opacity: 1;
+  transform: scale(1);
+}
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+#crosshair::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  background: #fff;
+  border-radius: 50%;
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 10px 20px;
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  background: var(--panel);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+#toast.show {
+  opacity: 1;
+}
+
+#toast.good {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+#toast.bad {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+#toast.info {
+  color: var(--cyan);
+  border-color: var(--line);
+}
+
+#objective {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 8px 16px;
+  font-size: 18px;
+  text-align: center;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+#objective:empty {
+  display: none;
+}
+
+#weapons {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+}
+
+.slot {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 700;
+  background: var(--panel);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.slot.owned {
+  color: var(--text);
+}
+
+.slot.active {
+  border-color: var(--cyan);
+  box-shadow: 0 0 14px rgba(94, 242, 255, 0.5);
+}
+
+#vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 40, 30, 0.6) 100%);
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+
+#vignette.hit {
+  opacity: 1;
+  transition: none;
+}
+
+/* ---------- Overlays ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding: 16px;
+  background: rgba(6, 10, 22, 0.66);
+  overflow-y: auto;
+}
+
+/* margin: auto centres the card but, unlike align-items, keeps its top reachable
+   by scrolling when the card is taller than the window. */
+.card {
+  margin: auto;
+  width: min(560px, 100%);
+  padding: 24px 32px;
+  text-align: center;
+  background: rgba(12, 18, 38, 0.94);
+  border: 2px solid var(--line);
+  border-radius: 16px;
+}
+
+.card.small {
+  width: min(320px, 100%);
+}
+
+.card.wide {
+  width: min(680px, 100%);
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 46px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 34px;
+  color: var(--cyan);
+}
+
+h3 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.story {
+  margin: 0 auto 18px;
+  max-width: 46ch;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.keys {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 16px;
+  text-align: left;
+  font-size: 15px;
+  color: var(--dim);
+}
+
+kbd {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  padding: 12px 40px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0a1020;
+  background: var(--cyan);
+  border: 0;
+  border-radius: 10px;
+}
+
+button.primary:hover {
+  filter: brightness(1.12);
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 15px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+button.choice {
+  min-width: 110px;
+  padding: 6px 14px;
+  font-weight: 700;
+  color: var(--cyan);
+  background: rgba(94, 242, 255, 0.1);
+  border: 2px solid var(--line);
+  border-radius: 8px;
+}
+
+.setting small {
+  color: var(--dim);
+}
+
+#voice-name-button {
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.choice:hover {
+  background: rgba(94, 242, 255, 0.2);
+}
+
+.note {
+  margin: 0 0 14px;
+  min-height: 1.2em;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+#best-line {
+  margin: 12px 0 0;
+}
+
+button.link {
+  display: block;
+  margin: 8px auto 0;
+  padding: 4px;
+  font-size: 13px;
+  color: var(--dim);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+}
+
+.stars {
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: 6px;
+  color: #ffd84a;
+}
+
+#results h2 {
+  margin-bottom: 4px;
+  font-size: 30px;
+}
+
+#results .story {
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+
+.stars .off {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.stat {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+.stat b {
+  display: block;
+  font-size: 22px;
+}
+
+.stat span {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.missed {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.missed span {
+  padding: 3px 10px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  background: rgba(255, 107, 94, 0.16);
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+}
+
+.grid-wrap {
+  overflow-x: auto;
+}
+
+table.grid {
+  margin: 0 auto;
+  border-collapse: separate;
+  border-spacing: 3px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+table.grid th {
+  width: 34px;
+  color: var(--dim);
+  font-weight: 400;
+}
+
+table.grid td {
+  width: 34px;
+  height: 21px;
+  border-radius: 5px;
+  color: #0a1020;
+  font-weight: 700;
+}
+
+table.grid td.unseen {
+  background: #263050;
+  color: #6c7aa0;
+}
+
+table.grid td.b0,
+table.grid td.b1 {
+  background: #ff6b5e;
+}
+
+table.grid td.b2 {
+  background: #ffa24a;
+}
+
+table.grid td.b3 {
+  background: #ffd84a;
+}
+
+table.grid td.b4 {
+  background: #b5ea5c;
+}
+
+table.grid td.b5 {
+  background: #5fd96a;
+}
+
+.legend {
+  margin: 6px 0 14px;
+  font-size: 13px;
+  color: var(--dim);
+}
